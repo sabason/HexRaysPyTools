@@ -2,7 +2,9 @@ import ctypes
 import sys
 import re
 import struct
+import collections
 
+import ida_hexrays
 import idaapi
 import idc
 import idautils
@@ -33,6 +35,9 @@ RECAST_GLOBAL_VARIABLE = 1
 RECAST_ARGUMENT = 2
 RECAST_RETURN = 3
 RECAST_STRUCTURE = 4
+
+RECAST_HELPER = 1
+RECAST_ASSIGMENT = 2
 
 
 def register(action, *args):
@@ -152,7 +157,7 @@ class RemoveArgument(idaapi.action_handler_t):
         del_arg = vu.item.get_lvar()  # lvar_t
 
         function_details.erase(filter(lambda x: x.name == del_arg.name, function_details)[0])
-
+        Helper.fix_automatic_naming(function_details)
         function_tinfo.create_func(function_details)
         idaapi.apply_tinfo2(vu.cfunc.entry_ea, function_tinfo, idaapi.TINFO_DEFINITE)
         vu.refresh_view(True)
@@ -191,6 +196,7 @@ class AddRemoveReturn(idaapi.action_handler_t):
             function_details.rettype = idaapi.tinfo_t(Const.PVOID_TINFO)
         else:
             function_details.rettype = idaapi.tinfo_t(idaapi.BT_VOID)
+        Helper.fix_automatic_naming(function_details)
         function_tinfo.create_func(function_details)
         idaapi.apply_tinfo2(vu.cfunc.entry_ea, function_tinfo, idaapi.TINFO_DEFINITE)
         vu.refresh_view(True)
@@ -234,6 +240,7 @@ class ConvertToUsercall(idaapi.action_handler_t):
             function_details.cc = idaapi.CM_CC_SPECIALE
         else:
             return
+        Helper.fix_automatic_naming(function_details)
         function_tinfo.create_func(function_details)
         idaapi.apply_tinfo2(vu.cfunc.entry_ea, function_tinfo, idaapi.TINFO_DEFINITE)
         vu.refresh_view(True)
@@ -744,7 +751,7 @@ class CreateNewField(idaapi.action_handler_t):
 class ShowGraph(idaapi.action_handler_t):
     name = "my:ShowGraph"
     description = "Show graph"
-    hotkey = "G"
+    hotkey = ""
     ForPopup = False
 
     def __init__(self):
@@ -829,26 +836,26 @@ class CreateVtable(idaapi.action_handler_t):
         if vdui.item.is_citem() and vdui.item.it.is_expr():
             target_item = vdui.item.e
             name = self.create_vtable(target_item.obj_ea)
-            if name is not None:
-                cfunc = vdui.cfunc
-                it_parent = cfunc.body.find_parent_of(target_item)
-                while it_parent or it_parent.op != idaapi.cit_block:
-                    if it_parent.is_expr() and it_parent.op == idaapi.cot_asg:
-                        operand = it_parent.cexpr.x
-                        if operand.op == idaapi.cot_memptr:
-                            off = operand.cexpr.m
-                            it_obj = operand.cexpr.x
-                            obj_name = ("%s"%it_obj.cexpr.type).strip(" *")
-                            sid = idc.GetStrucIdByName(obj_name)
-                            if sid == idaapi.BADADDR:
-                                break
-                            sptr = idaapi.get_struc(sid)
-                            mptr = idaapi.get_best_fit_member(sptr,off)
-                            tif = idaapi.tinfo_t()
-                            idaapi.parse_decl2(my_ti,name + " *;",tif,0)
-                            idaapi.set_member_tinfo2(sptr,mptr,0,tif,0)
-                            break
-                    it_parent = cfunc.body.find_parent_of(it_parent)
+            # if name is not None:
+            #     cfunc = vdui.cfunc
+            #     it_parent = cfunc.body.find_parent_of(target_item)
+            #     while not it_parent is None or it_parent.op != idaapi.cit_block:
+            #         if it_parent.is_expr() and it_parent.op == idaapi.cot_asg:
+            #             operand = it_parent.cexpr.x
+            #             if operand.op == idaapi.cot_memptr:
+            #                 off = operand.cexpr.m
+            #                 it_obj = operand.cexpr.x
+            #                 obj_name = ("%s"%it_obj.cexpr.type).strip(" *")
+            #                 sid = idc.GetStrucIdByName(obj_name)
+            #                 if sid == idaapi.BADADDR:
+            #                     break
+            #                 sptr = idaapi.get_struc(sid)
+            #                 mptr = idaapi.get_best_fit_member(sptr,off)
+            #                 tif = idaapi.tinfo_t()
+            #                 idaapi.parse_decl2(my_ti,name + " *;",tif,0)
+            #                 idaapi.set_member_tinfo2(sptr,mptr,0,tif,0)
+            #                 break
+            #         it_parent = cfunc.body.find_parent_of(it_parent)
             vdui.refresh_view(True)
 
     def update(self, ctx):
@@ -872,20 +879,21 @@ class CreateVtable(idaapi.action_handler_t):
             return False
 
         # print "addr = 0x%08X" % addr
+
         name = idc.AskStr("", "Please enter the class name")
         if name is None:
             return
-        struct_id = idc.GetStrucIdByName(name + "_vtbl")
+        struct_id = idaapi.get_struc_id(name + "_vtbl")
         # print struct_id
         if struct_id != idaapi.BADADDR:
-            i = idc.AskYN(0, "A vtable structure for %s already exists. Are you sure you want to remake it?" % name)
+            i = idaapi.askyn_c(0, "A vtable structure for %s already exists. Are you sure you want to remake it?" % name)
             if i == idaapi.BADADDR:
                 return
             if i == 1:
-                idc.DelStruc(struct_id)
-                struct_id = idc.AddStrucEx(idaapi.BADADDR, name + "_vtbl", 0)
+                idaapi.del_struc_members(idaapi.get_struc(struct_id),0,idaapi.get_struc_size(struct_id))
+                # struct_id = idc.AddStrucEx(idaapi.BADADDR, name + "_vtbl", 0)
         else:
-            struct_id = idc.AddStrucEx(idaapi.BADADDR, name + "_vtbl", 0)
+            struct_id = idaapi.add_struc(idaapi.BADADDR, name + "_vtbl", 0)
         if struct_id == idaapi.BADADDR:
             Warning("Could not create the vtable structure!.\nPlease check the entered class name.")
             return
@@ -894,30 +902,47 @@ class CreateVtable(idaapi.action_handler_t):
         i = 0
         n = Netnode("$ VTables")
         n[name + "_vtbl"] = []
-        while (idaapi.isFunc(idaapi.getFlags(idc.Dword(addr))) and (self.GetXrefCnt(addr) == 0 or i == 0)) is True:
-            c = idc.Dword(addr)
+        info = idaapi.get_inf_structure()
+        if not Const.EA64:
+            ptr_size = 4
+            fSize = idaapi.FF_DWRD
+            refinf = idaapi.refinfo_t(idaapi.REF_OFF32)
+        else:
+            ptr_size = 8
+            fSize = idaapi.FF_QWRD
+            refinf = idaapi.refinfo_t(idaapi.REF_OFF64)
+        # else:
+        #     ptr_size = 2
+        #     fSize = idaapi.FF_WORD
+        #     refinf = idaapi.refinfo_t(idaapi.REF_OFF16)
+
+        opinf = idaapi.opinfo_t()
+        opinf.ri = refinf
+        while (idaapi.isFunc(idaapi.getFlags(idc.Dword(addr))) and (self.GetXrefCnt(addr) == 0 or i == 0) or idc.Dword(addr) != 0) is True:
+            c = idaapi.get_full_long(addr)
             methName = ""
             # print "c = 0x%08X" % c
             # print "i = %d" % i
             if c != 0:
-                if idc.hasName(c) or idc.Name(c) != "":
-                    methName = idc.Name(c)
+                if idc.hasName(c) or idaapi.get_name(idaapi.BADADDR,c) != "":
+                    methName = idaapi.get_name(idaapi.BADADDR,c)
                     if isMangled(methName):
-                        methName = idc.Demangle(methName, 0)[:idc.Demangle(methName, 0).find("(")]
+                        methName = idaapi.demangle_name(methName, 0)[:idaapi.demangle_name(methName, 0).find("(")]
                         methName = methName.replace("~", "dtor_").replace("==", "_equal")
                 else:
                     methName = name + "__" + "virt_%X" % c
             else:
                 methName = "field_%02X" % (i * 4)
             # print methName
-            e = idc.AddStrucMember(struct_id, methName, i * 4, idaapi.FF_0OFF | idaapi.FF_DWRD | idaapi.FF_DATA, idaapi.BADADDR, 4)
+            sptr = idaapi.get_struc(struct_id)
+            e = idaapi.add_struc_member(sptr, methName, i * ptr_size, idaapi.FF_0OFF | fSize | idaapi.FF_DATA, opinf, ptr_size)
             # print "e = %d" % e
             if e != 0:
                 if e == -1:
                     l = 0
                     while e == -1:
-                        e = idc.AddStrucMember(struct_id, (methName + "_%d"%l), i * 4, idaapi.FF_0OFF | idaapi.FF_DWRD | idaapi.FF_DATA,
-                                               idaapi.BADADDR, 4)
+                        e = idaapi.add_struc_member(sptr, (methName + "_%d"%l), i * ptr_size, idaapi.FF_0OFF | fSize | idaapi.FF_DATA,
+                                                    opinf, ptr_size)
                         l = l + 1
                 elif e != -2 and e != idaapi.BADADDR:
                     Warning("Error adding a vtable entry!")
@@ -925,13 +950,13 @@ class CreateVtable(idaapi.action_handler_t):
                 else:
                     Warning("Unknown error! Err = %d"%e)
                     return
-            idc.SetMemberComment(struct_id, i * 4, "-> %08X, args: 0x%X" % (c, idc.GetFrameArgsSize(c)), 1)
+            idc.SetMemberComment(struct_id, i * ptr_size, "-> %08X, args: 0x%X" % (c, idc.GetFrameArgsSize(c)), 1)
             l = n[name + "_vtbl"]
             l.append((c - idaapi.get_imagebase()) if c else idaapi.BADADDR)
             n[name + "_vtbl"] = l
 
             i = i + 1
-            addr = addr + 4
+            addr = addr + ptr_size
         return name + "_vtbl"
 
 
@@ -1052,9 +1077,13 @@ class RecastItemLeft(idaapi.action_handler_t):
             expression = ctree_item.it.to_specific_type
 
             child = None
+            branch_nodes = [expression]
             while expression and expression.op not in (idaapi.cot_asg, idaapi.cit_return, idaapi.cot_call):
                 child = expression.to_specific_type
                 expression = cfunc.body.find_parent_of(expression)
+                if expression:
+                    branch_nodes.append(expression.to_specific_type)
+            branch_nodes.reverse()
 
             if expression:
                 expression = expression.to_specific_type
@@ -1076,12 +1105,12 @@ class RecastItemLeft(idaapi.action_handler_t):
                     elif expression.x.op == idaapi.cot_obj:
                         idaapi.update_action_label(RecastItemLeft.name, 'Recast Global')
                         return RECAST_GLOBAL_VARIABLE, right_tinfo, expression.x.obj_ea
-                    elif expression.x.op == idaapi.cot_memptr:
-                        idaapi.update_action_label(RecastItemLeft.name, 'Recast Field')
-                        return RECAST_STRUCTURE, expression.x.x.type.get_pointed_object().dstr(), expression.x.m, right_tinfo
-                    elif expression.x.op == idaapi.cot_memref:
-                        idaapi.update_action_label(RecastItemLeft.name, 'Recast Field')
-                        return RECAST_STRUCTURE, expression.x.x.type.dstr(), expression.x.m, right_tinfo
+                    # elif expression.x.op == idaapi.cot_memptr:
+                    #     idaapi.update_action_label(RecastItemLeft.name, 'Recast Field')
+                    #     return RECAST_STRUCTURE, expression.x.x.type.get_pointed_object().dstr(), expression.x.m, right_tinfo
+                    # elif expression.x.op == idaapi.cot_memref:
+                    #     idaapi.update_action_label(RecastItemLeft.name, 'Recast Field')
+                    #     return RECAST_STRUCTURE, expression.x.x.type.dstr(), expression.x.m, right_tinfo
 
                 elif expression.op == idaapi.cit_return:
 
@@ -1105,19 +1134,64 @@ class RecastItemLeft(idaapi.action_handler_t):
                         return
 
                     if child and child.op == idaapi.cot_cast:
-                        if child.cexpr.x.op == idaapi.cot_memptr:
+                        if child.cexpr.x.op == idaapi.cot_memptr and expression.x.index == child.index \
+                                and cfunc.body.find_parent_of(ctree_item.e).op not in (idaapi.cot_memref, idaapi.cot_memptr):
                             idaapi.update_action_label(RecastItemLeft.name, 'Recast Virtual Function')
                             return RECAST_STRUCTURE, child.cexpr.x.x.type.get_pointed_object().dstr(), child.cexpr.x.m, child.type
+                        elif child.cexpr.x.op == idaapi.cot_memref and expression.x.index == child.index \
+                                and cfunc.body.find_parent_of(ctree_item.e).op not in (idaapi.cot_memref, idaapi.cot_memptr):
+                            idaapi.update_action_label(RecastItemLeft.name, 'Recast Virtual Function')
+                            return RECAST_STRUCTURE, child.cexpr.x.x.type.dstr(), child.cexpr.x.m, child.type
 
-                        arg_index, _ = Helper.get_func_argument_info(expression, child.cexpr)
-                        idaapi.update_action_label(RecastItemLeft.name, "Recast Argument")
-                        return (
-                            RECAST_ARGUMENT,
-                            arg_index,
-                            expression.x.type.get_pointed_object(),
-                            child.x.type,
-                            expression.x.obj_ea
-                        )
+                        if expression.x.index != child.index:
+                            arg_index, _ = Helper.get_func_argument_info(expression, child.cexpr)
+                            idaapi.update_action_label(RecastItemLeft.name, "Recast Argument")
+                            return (
+                                RECAST_ARGUMENT,
+                                arg_index,
+                                expression.x.type.get_pointed_object(),
+                                child.x.type,
+                                expression.x.obj_ea
+                            )
+                branch_idx = 0
+                fPtr = False
+                if len(branch_nodes) > 1 and branch_nodes[branch_idx].op == idaapi.cot_call and branch_nodes[branch_idx].x.index != branch_nodes[branch_idx+1].index \
+                        and branch_nodes[branch_idx].x.op != idaapi.cot_helper:
+                    branch_idx += 1
+                    if branch_nodes[branch_idx].op == idaapi.cot_ref:
+                        fPtr = True
+                        branch_idx += 1
+                    if branch_nodes[branch_idx].index == ctree_item.e.index:
+                        func_tif = idaapi.tinfo_t()
+                        if fPtr:
+                            item_type = idaapi.tinfo_t()
+                            item_type.create_ptr(ctree_item.e.type)
+                        else:
+                            item_type = ctree_item.e.type
+                        if idaapi.get_tinfo2(branch_nodes[0].x.obj_ea,func_tif):
+                            arg_index, _ = Helper.get_func_argument_info(branch_nodes[0], branch_nodes[1])
+                            fi = idaapi.func_type_data_t()
+                            if func_tif.get_func_details(fi) and fi[arg_index].type.dstr() != item_type.dstr():
+                                idaapi.update_action_label(RecastItemLeft.name, "Recast Argument")
+                                return (
+                                    RECAST_ARGUMENT,
+                                    arg_index,
+                                    branch_nodes[0].x.type.get_pointed_object(),
+                                    item_type,
+                                    branch_nodes[0].x.obj_ea
+                                )
+                        else:
+                            arg_index, _ = Helper.get_func_argument_info(branch_nodes[0], branch_nodes[1])
+                            idaapi.update_action_label(RecastItemLeft.name, "Recast Argument")
+                            return (
+                                RECAST_ARGUMENT,
+                                arg_index,
+                                branch_nodes[0].x.type.get_pointed_object(),
+                                item_type,
+                                branch_nodes[0].x.obj_ea
+                            )
+
+
 
     def activate(self, ctx):
         hx_view = idaapi.get_tform_vdui(ctx.form if ida_pro.IDA_SDK_VERSION < 700 else ctx.widget)
@@ -1142,10 +1216,13 @@ class RecastItemLeft(idaapi.action_handler_t):
                 func_data = idaapi.func_type_data_t()
                 func_tinfo.get_func_details(func_data)
                 func_data[arg_index].type = arg_tinfo
+                Helper.fix_automatic_naming(func_data)
                 new_func_tinfo = idaapi.tinfo_t()
                 new_func_tinfo.create_func(func_data)
                 if idaapi.apply_tinfo2(address, new_func_tinfo, idaapi.TINFO_DEFINITE):
                     hx_view.refresh_view(True)
+                # if ida_hexrays.set_type(address, new_func_tinfo, ida_hexrays.GUESSED_WEAK,False):
+                #     hx_view.refresh_view(True)
 
             elif result[0] == RECAST_RETURN:
                 return_type, func_address = result[1:]
@@ -1160,6 +1237,7 @@ class RecastItemLeft(idaapi.action_handler_t):
                 func_data = idaapi.func_type_data_t()
                 function_tinfo.get_func_details(func_data)
                 func_data.rettype = return_type
+                Helper.fix_automatic_naming(func_data)
                 function_tinfo.create_func(func_data)
                 if idaapi.apply_tinfo2(cfunc.entry_ea, function_tinfo, idaapi.TINFO_DEFINITE):
                     hx_view.refresh_view(True)
@@ -1175,16 +1253,55 @@ class RecastItemLeft(idaapi.action_handler_t):
                     udt_member = idaapi.udt_member_t()
                     udt_member.offset = field_offset * 8
                     idx = tinfo.find_udt_member(idaapi.STRMEM_OFFSET, udt_member)
-                    if udt_member.offset != field_offset * 8:
-                        print "[Info] Can't handle with arrays yet"
-                    elif udt_member.type.get_size() != new_type.get_size():
-                        print "[Info] Can't recast different sizes yet"
-                    else:
-                        udt_data = idaapi.udt_type_data_t()
-                        tinfo.get_udt_details(udt_data)
-                        udt_data[idx].type = new_type
-                        tinfo.create_udt(udt_data, idaapi.BTF_STRUCT)
-                        tinfo.set_numbered_type(idaapi.cvar.idati, ordinal, idaapi.NTF_REPLACE, structure_name)
+                    # if udt_member.offset != field_offset * 8:
+                    #     print "[Info] Can't handle with arrays yet"
+                    # elif udt_member.type.get_size() != new_type.get_size():
+                    #     print "[Info] Can't recast different sizes yet"
+                    #     sid = idaapi.get_struc_id(structure_name)
+                    #     if sid != idaapi.BADADDR:
+                    #         sptr = idaapi.get_struc(sid)
+                    #         mptr = idaapi.get_member(sptr, field_offset)
+                    #         rc = idaapi.set_member_tinfo2(sptr,mptr,field_offset,new_type,idaapi.SET_MEMTI_MAY_DESTROY)
+                    #         if rc != 1:
+                    #             print ("set_member_tinfo2 rc = %d"%rc)
+                    #         hx_view.refresh_view(True)
+                    # else:
+                        #Commented solution having troubles if struct with recasted member is a member of union.
+                        #And, my variant may work with various sizes of types.
+
+                        # udt_data = idaapi.udt_type_data_t()
+                        # tinfo.get_udt_details(udt_data)
+                        # udt_data[idx].type = new_type
+                        # tinfo.create_udt(udt_data, idaapi.BTF_STRUCT)
+                        # tinfo.set_numbered_type(idaapi.cvar.idati, ordinal, idaapi.NTF_REPLACE, structure_name)
+                    sid = idaapi.get_struc_id(structure_name)
+                    if sid != idaapi.BADADDR:
+                        sptr = idaapi.get_struc(sid)
+                        mptr = idaapi.get_member(sptr, field_offset)
+                        if mptr is None:
+                            if idaapi.add_struc_member(sptr,"field_%X"%field_offset,field_offset, idaapi.FF_DATA|idaapi.FF_BYTE,None,1) != 0:
+                                print "Error on add_struc_member!"
+                            mptr = idaapi.get_member(sptr, field_offset)
+                        elif mptr.soff != field_offset:
+                            if not idaapi.del_struc_member(sptr,mptr.soff):
+                                print "Error on del_struc_member!"
+                            if idaapi.add_struc_member(sptr,"field_%X"%field_offset,field_offset, idaapi.FF_DATA|idaapi.FF_BYTE,None,1) != 0:
+                                print "Error on add_struc_member!"
+                            mptr = idaapi.get_member(sptr, field_offset)
+                        else:
+                            tif = idaapi.tinfo_t()
+                            idaapi.get_member_tinfo2(mptr, tif)
+                            if tif.is_array():
+                                if not idaapi.del_struc_member(sptr, mptr.soff):
+                                    print "Error on del_struc_member!"
+                                if idaapi.add_struc_member(sptr, "field_%X" % field_offset, field_offset,
+                                                           idaapi.FF_DATA | idaapi.FF_BYTE, None, 1) != 0:
+                                    print "Error on add_struc_member!"
+                                mptr = idaapi.get_member(sptr, field_offset)
+                        rc = idaapi.set_member_tinfo2(sptr, mptr, field_offset, new_type,
+                                                      idaapi.SET_MEMTI_MAY_DESTROY)
+                        if rc != 1:
+                            print ("set_member_tinfo2 rc = %d" % rc)
                         hx_view.refresh_view(True)
 
     def update(self, ctx):
@@ -1224,6 +1341,11 @@ class RecastItemRight(RecastItemLeft):
                     expression = expression.x
                 else:
                     new_type = expression.type
+                nodes = Helper.get_nodes_to_call_parent(ctree_item,cfunc)
+                call_parent = None
+                call_child = None
+                if nodes:
+                    call_parent, call_child = nodes[:2]
 
                 if expression.x.op == idaapi.cot_var:
 
@@ -1238,6 +1360,44 @@ class RecastItemRight(RecastItemLeft):
                 elif expression.x.op == idaapi.cot_call:
                     idaapi.update_action_label(RecastItemRight.name, "Recast Return")
                     return RECAST_RETURN, new_type, expression.x.x.obj_ea
+
+                # elif expression.x.op in (idaapi.cot_memptr,idaapi.cot_memref) and call_parent is None:
+                #     if expression.x.op == idaapi.cot_memptr:
+                #         idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+                #         return RECAST_STRUCTURE, expression.x.x.type.get_pointed_object().dstr(),expression.x.m,new_type
+                #     elif expression.x.op == idaapi.cot_memref:
+                #         idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+                #         return RECAST_STRUCTURE, expression.x.x.type.dstr(), expression.x.m, new_type
+
+                # elif call_parent and call_child.op == idaapi.cot_cast and ctree_item.e.op in (idaapi.cot_memptr, idaapi.cot_memref):
+                #     if nodes[2].op == idaapi.cot_add:
+                #         offset = nodes[2].to_specific_type.y.n._value if nodes[2].to_specific_type.x.index == nodes[3].index else nodes[2].to_specific_type.x.n._value
+                #         if nodes[-2].op == idaapi.cot_ref:
+                #             idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+                #             # tmp = (RECAST_STRUCTURE, ctree_item.e.x.type.get_pointed_object().dstr(), ctree_item.e.m + offset, call_child.to_specific_type.type.get_pointed_object())
+                #             return RECAST_STRUCTURE, ctree_item.e.x.type.get_pointed_object().dstr(), ctree_item.e.m + offset, call_child.to_specific_type.type.get_pointed_object()
+                #     if ctree_item.e.op == idaapi.cot_memptr:
+                #         if nodes[-2].op == idaapi.cot_ref:
+                #             idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+                #             return RECAST_STRUCTURE, ctree_item.e.x.type.get_pointed_object().dstr(),ctree_item.e.m, call_child.to_specific_type.type.get_pointed_object()
+                #         else:
+                #             sid = idaapi.get_struc_id(ctree_item.e.x.type.get_pointed_object().dstr())
+                #             if sid != idaapi.BADADDR:
+                #                 sptr = idaapi.get_struc(sid)
+                #                 mptr = idaapi.get_member(sptr, ctree_item.e.m)
+                #                 if mptr:
+                #                     tif = idaapi.tinfo_t()
+                #                     idaapi.get_member_tinfo2(mptr,tif)
+                #                     if tif.is_array():
+                #                         idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+                #                         return RECAST_STRUCTURE, ctree_item.e.x.type.get_pointed_object().dstr(), ctree_item.e.m, call_child.to_specific_type.type.get_pointed_object()
+                #                     else:
+                #                         idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+                #                         return RECAST_STRUCTURE, ctree_item.e.x.type.get_pointed_object().dstr(), ctree_item.e.m, call_child.to_specific_type.type
+                #                 else:
+                #                     idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+                #                     return RECAST_STRUCTURE, ctree_item.e.x.type.get_pointed_object().dstr(), ctree_item.e.m, call_child.to_specific_type.type.get_pointed_object()
+
 
 
 class RenameOther(idaapi.action_handler_t):
@@ -1327,6 +1487,7 @@ class RenameInside(idaapi.action_handler_t):
 
             func_data = idaapi.func_type_data_t()
             func_tinfo.get_func_details(func_data)
+            Helper.fix_automatic_naming(func_data)
             func_data[arg_index].name = name
             new_func_tinfo = idaapi.tinfo_t()
             new_func_tinfo.create_func(func_data)
@@ -1420,14 +1581,28 @@ class SimpleCreateStruct(idaapi.action_handler_t):
             ctypes.POINTER(ctypes.c_ulong),                     #const sclass_t *sclass=NULL
         ]
 
+
+
     @staticmethod
     def check(cfunc, ctree_item):
         return True
 
     def create_struct_type(self, struc_size, name, field_size=4, fAllign=True):
-        my_til = ctypes.c_void_p.in_dll(self.g_dll, 'idati')
+        if ida_pro.IDA_SDK_VERSION < 700:
+            c_my_til = ctypes.c_void_p.in_dll(self.g_dll, 'idati')
+        else:
+            c_get_idati = self.g_dll.get_idati
+            c_get_idati.restype = ctypes.c_longlong
+            c_my_til = c_get_idati()
         my_ti = idaapi.cvar.idati
+        c_compact_numbered_types = self.g_dll.compact_numbered_types
 
+        c_compact_numbered_types.argtypes = [
+            ctypes.c_longlong,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int
+        ]
         def make_field_str(field_num, fsize, pad=0):
             ret = ""
             for i in range(0, field_num):
@@ -1497,10 +1672,12 @@ class SimpleCreateStruct(idaapi.action_handler_t):
             return ret
 
         struct_id = idc.GetStrucIdByName(name)
-        if struct_id != idaapi.BADADDR:
+        type_ord = idaapi.get_type_ordinal(my_ti,name)
+        if struct_id != idaapi.BADADDR or type_ord != 0:
             answer = idc.AskYN(0, "A structure for %s already exists. Are you sure you want to remake it?" % name)
             if answer == 1:
-                idc.DelStruc(struct_id)
+                if struct_id != idaapi.BADADDR:
+                    idc.DelStruc(struct_id)
             else:
                 return
         fields_num, pad = divmod(struc_size, field_size)
@@ -1508,27 +1685,61 @@ class SimpleCreateStruct(idaapi.action_handler_t):
             fields_num += 1
             pad = 0
         typ_type = ctypes.c_char_p(make_type_string(fields_num, field_size, pad))
+        # typ_type = make_type_string(fields_num, field_size, pad)
         typ_fields = ctypes.c_char_p(make_field_str(fields_num, field_size, pad))
+        # typ_fields = make_field_str(fields_num, field_size, pad)
         typ_cmt = ctypes.c_char_p("")
         typ_fieldcmts = ctypes.c_char_p("")
+        # typ_fieldcmts = ""
         sclass = ctypes.c_ulong(0)
-        idaapi.compact_til(my_ti)
-        idx = idaapi.alloc_type_ordinal(my_ti)
+        sclass = ctypes.byref(sclass)
+        c_compact_numbered_types(c_my_til,1,0,0)
+        # c_my_til = c_get_idati()
+        pname = ctypes.c_char_p(name)
+        if type_ord != 0:
+            idx = type_ord
+        else:
+            idx = idaapi.alloc_type_ordinal(my_ti)
         ret = self.set_numbered_type(
-            my_til,
+            c_my_til,
             idx,
-            0x1,
-            ctypes.c_char_p(name),
+            0x5,
+            pname,
             typ_type,
             typ_fields,
             typ_cmt,
             typ_fieldcmts,
-            ctypes.byref(sclass)
+            sclass
         )
-        if ret != 0:
-            idc.Til2Idb(-1, name)
+        # tif = idaapi.tinfo_t()
+        # tif.deserialize(my_ti,typ_type,typ_fields,typ_fieldcmts)
+        # if tif.set_numbered_type(my_ti,idaapi.NTF_REPLACE,idx,name):
+        #     if ida_pro.IDA_SDK_VERSION < 700:
+        #         ret = 1
+        #     else:
+        #         ret = 0
+        # else:
+        #     if ida_pro.IDA_SDK_VERSION < 700:
+        #         ret = 0
+        #     else:
+        #         ret = 1
+        if (ida_pro.IDA_SDK_VERSION < 700 and ret != 0) or (ida_pro.IDA_SDK_VERSION >= 700 and ret != 1):
+            idaapi.import_type(idaapi.cvar.idati,-1, name)
+            sid = idaapi.get_struc_id(name)
+            sptr = idaapi.get_struc(sid)
+            align_shift = 0
+            if fAllign:
+                if field_size == 2:
+                    align_shift = 1
+                elif field_size == 4:
+                    align_shift = 2
+                elif field_size == 8:
+                    align_shift = 3
+            idaapi.set_struc_align(sptr, align_shift)
         else:
             Warning("set_numbered_type error")
+
+
 
     def activate(self, ctx):
         vdui = idaapi.get_tform_vdui(ctx.form if ida_pro.IDA_SDK_VERSION < 700 else ctx.widget)
@@ -1600,22 +1811,242 @@ class RecastStructMember(idaapi.action_handler_t):
 
     @staticmethod
     def check(cfunc, ctree_item):
-        if ctree_item.it.op in [idaapi.cot_memptr, idaapi.cot_memref]:
+        if ctree_item.citype == idaapi.VDI_EXPR and ctree_item.it.op in (idaapi.cot_memptr, idaapi.cot_memref):
             parent = cfunc.body.find_parent_of(ctree_item.it)
-            if parent and parent.op == idaapi.cot_call and parent.to_specific_type.x.op == idaapi.cot_helper:
+            if parent and parent.op == idaapi.cot_call and parent.cexpr.x.op == idaapi.cot_helper:
                 cast_helper = parent.to_specific_type.x.helper
                 helpers = ["HIBYTE", "LOBYTE", "BYTE", "HIWORD", "LOWORD"]
                 for h in helpers:
                     if cast_helper.startswith(h):
-                        return ("%s"%ctree_item.it.to_specific_type.x.type).strip(" *"), ctree_item.it.to_specific_type.m, cast_helper
-        return False
+                        return RECAST_HELPER, idaapi.remove_pointer(ctree_item.e.x.type).dstr(), ctree_item.e.m, cast_helper
+
+            rc = Helper.get_branch(cfunc,ctree_item)
+            branch_idx = 0
+            off_delta = 0
+            fDoDeref = False
+            if rc:
+                return RecastStructMember.process_branch(rc)
+            # if rc and rc[branch_idx].op == idaapi.cot_asg:
+            #     tmp = RecastStructMember.process_asg_branch(rc)
+            #     branch_idx += 1
+            #     if rc[branch_idx].op == idaapi.cot_ptr:
+            #         fDoDeref = True
+            #         branch_idx += 1
+            #     if rc[branch_idx].op == idaapi.cot_cast:
+            #         new_type = idaapi.remove_pointer(rc[branch_idx].cexpr.type) if fDoDeref else rc[branch_idx].cexpr.type
+            #         if rc[branch_idx].cexpr.x.index == rc[-1].index:
+            #             struct_name = rc[-1].cexpr.x.type.get_pointed_object().dstr() if rc[-1].op == idaapi.cot_memptr else \
+            #                 rc[-1].cexpr.x.type.dstr()
+            #             return RECAST_STRUCTURE, struct_name, ctree_item.e.m + off_delta, new_type
+            #         branch_idx += 1
+            #         if rc[branch_idx].op == idaapi.cot_ref:
+            #             branch_idx += 1
+            #         if rc[branch_idx].op in (idaapi.cot_add, idaapi.cot_idx):
+            #             off_delta = rc[branch_idx].cexpr.y.n._value if rc[branch_idx].cexpr.x.index == rc[branch_idx+1].index \
+            #                 else rc[branch_idx].to_specific_type.x.n._value
+            #             off_delta = idaapi.remove_pointer(rc[branch_idx].cexpr.type).get_size() * off_delta
+            #             if rc[branch_idx].op == idaapi.cot_idx and (rc[branch_idx].cexpr.x.index == rc[-1].index or rc[branch_idx].cexpr.y.index == rc[-1].index):
+            #                 struct_name = rc[-1].cexpr.x.type.get_pointed_object().dstr() if rc[-1].op == idaapi.cot_memptr else rc[-1].cexpr.x.type.dstr()
+            #                 return RECAST_STRUCTURE, struct_name, ctree_item.e.m + off_delta, new_type
+            #             branch_idx += 1
+            #             while rc[branch_idx].index != ctree_item.it.index:
+            #                 if rc[branch_idx].op not in (idaapi.cot_ref, idaapi.cot_cast, idaapi.cot_ptr):
+            #                     return
+            #                 branch_idx += 1
+            #             struct_name = rc[-1].cexpr.x.type.get_pointed_object().dstr() if rc[-1].op == idaapi.cot_memptr else \
+            #                 rc[-1].cexpr.x.type.dstr()
+            #             return RECAST_STRUCTURE, struct_name, ctree_item.e.m + off_delta, new_type
+            #         if rc[branch_idx].index == rc[-1].index:
+            #             struct_name = rc[-1].cexpr.x.type.get_pointed_object().dstr() if rc[-1].op == idaapi.cot_memptr else \
+            #                 rc[-1].cexpr.x.type.dstr()
+            #             return RECAST_STRUCTURE, struct_name, ctree_item.e.m + off_delta, new_type
+            #     elif rc[branch_idx].op == idaapi.cot_add:
+            #         off_delta = rc[branch_idx].cexpr.y.n._value if rc[branch_idx].cexpr.x.index == rc[branch_idx + 1].index \
+            #             else rc[branch_idx].to_specific_type.x.n._value
+            #         off_delta = idaapi.remove_pointer(rc[branch_idx].cexpr.type).get_size() * off_delta
+            #         branch_idx += 1
+            #         if rc[branch_idx].op == idaapi.cot_ref:
+            #             branch_idx += 1
+            #         if rc[branch_idx].cexpr.index == rc[-1].index:
+            #             struct_name = rc[-1].cexpr.x.type.get_pointed_object().dstr() if rc[-1].op == idaapi.cot_memptr else \
+            #                 rc[-1].cexpr.x.type.dstr()
+            #             sid = idaapi.get_struc_id(struct_name)
+            #             if sid != idaapi.BADADDR:
+            #                 sptr = idaapi.get_struc(sid)
+            #                 mptr = idaapi.get_member(sptr, ctree_item.e.m + off_delta)
+            #                 if mptr is None:
+            #                     return RECAST_STRUCTURE, struct_name, ctree_item.e.m + off_delta, rc[0].cexpr.type
+            #
+            # elif rc and rc[0].op in (idaapi.cot_slt, idaapi.cot_eq):
+            #     branch_idx += 1
+            #     if rc[branch_idx].op == idaapi.cot_ptr:
+            #         fDoDeref = True
+            #         branch_idx += 1
+            #     if rc[branch_idx].op == idaapi.cot_cast:
+            #         new_type = idaapi.remove_pointer(rc[branch_idx].cexpr.type) if fDoDeref else rc[branch_idx].cexpr.type
+            #         if rc[branch_idx].cexpr.x.index == rc[-1].index:
+            #             struct_name = rc[-1].cexpr.x.type.get_pointed_object().dstr() if rc[-1].op == idaapi.cot_memptr else \
+            #                 rc[-1].cexpr.x.type.dstr()
+            #             return RECAST_STRUCTURE, struct_name, ctree_item.e.m + off_delta, new_type
+            #
+            # elif rc and rc[branch_idx].op == idaapi.cot_call:
+            #     return RecastStructMember.process_call_branch(rc)
+        return
+
+    @staticmethod
+    def process_call_branch(nodes,idx = 0):
+        target = nodes[-1]
+        new_type = None
+        fDoDeref = False
+        off_delta = 0
+        while nodes[idx] != target:
+            item = nodes[idx]
+            if item.op == idaapi.cot_cast:
+                if new_type is None:
+                    new_type = item.cexpr.type
+            elif item.op == idaapi.cot_ref:
+                fDoDeref = True
+            elif item.op in (idaapi.cot_add, idaapi.cot_idx):
+                if new_type is None and item.op == idaapi.cot_add:
+                    new_type = item.cexpr.type
+                num = item.cexpr.y.n._value if item.cexpr.x.index == nodes[idx + 1].index else item.to_specific_type.x.n._value
+                off_delta += (num * idaapi.remove_pointer(item.cexpr.type).get_size())
+            idx += 1
+        if new_type:
+            struct_name = target.cexpr.x.type.get_pointed_object().dstr() if target.op == idaapi.cot_memptr else \
+                target.cexpr.x.type.dstr()
+            if fDoDeref or (target.cexpr.type.is_array() and not target.cexpr.type.get_array_element().is_ptr()):
+                new_type = idaapi.remove_pointer(new_type)
+            return RECAST_STRUCTURE, struct_name, target.cexpr.m + off_delta, new_type
+
+    @staticmethod
+    def resolve_references(tp, ref_cnt, ptr_cnt):
+        delta = ref_cnt - ptr_cnt
+        if delta > 0:
+            while delta:
+                tp = idaapi.remove_pointer(tp)
+                delta -= 1
+        elif delta < 0:
+            delta = abs(delta)
+            while delta:
+                tif = idaapi.tinfo_t()
+                tif.create_ptr(tp)
+                tp = tif
+                delta -= 1
+        return tp
+
+    @staticmethod
+    def process_asg_second_branch(nodes):
+        top = nodes[0]
+        target = nodes[-1]
+        next_node = top.x if top.y.index == nodes[1].index else top.y
+        ref_cnt = 0
+        ptr_cnt = 0
+        new_type = None
+        while next_node and next_node.op not in (idaapi.cot_var, idaapi.cot_memptr, idaapi.cot_memref, idaapi.cot_call, idaapi.cot_num):
+            if next_node.op == idaapi.cot_ref:
+                ref_cnt += 1
+            elif next_node.op == idaapi.cot_ptr:
+                ptr_cnt += 1
+            if next_node.x:
+                next_node = next_node.x.cexpr
+            else:
+                break
+        return RecastStructMember.resolve_references(next_node.type, ref_cnt, ptr_cnt)
+
+
+    @staticmethod
+    def process_asg_branch(nodes, idx = 0):
+        second_branch_node = nodes[idx].cexpr.x if nodes[idx+1].index == nodes[idx].cexpr.y.index else nodes[idx].cexpr.y
+        target = nodes[-1]
+        new_type = None
+        fDoDeref = False
+        ref_cnt = 0
+        ptr_cnt = 0
+        off_delta = 0
+        new_type_second = None
+        while second_branch_node and second_branch_node.op not in (idaapi.cot_var,):
+            second_branch_node = second_branch_node.cexpr.x
+        if second_branch_node:
+            new_type_second = second_branch_node.cexpr.type
+        while nodes[idx] != target:
+            item = nodes[idx]
+            if item.op == idaapi.cot_cast:
+                if new_type is None:
+                    new_type = item.cexpr.type
+            elif item.op == idaapi.cot_ref:
+                ref_cnt += 1
+            elif item.op == idaapi.cot_ptr:
+                ptr_cnt += 1
+            elif item.op in (idaapi.cot_add, idaapi.cot_idx):
+                if new_type is None and item.op == idaapi.cot_add:
+                    new_type = item.cexpr.type
+                num = item.cexpr.y.n._value if item.cexpr.x.index == nodes[idx + 1].index else item.to_specific_type.x.n._value
+                off_delta += (num * idaapi.remove_pointer(item.cexpr.type).get_size())
+            idx += 1
+        if new_type or (new_type_second and target.cexpr.type.dstr() != new_type_second.dstr()):
+            struct_name = target.cexpr.x.type.get_pointed_object().dstr() if target.op == idaapi.cot_memptr else \
+                target.cexpr.x.type.dstr()
+            new_type = RecastStructMember.resolve_references(new_type,ref_cnt,ptr_cnt)
+            if target.cexpr.type.is_array() and not target.cexpr.type.get_array_element().is_ptr():
+                new_type = idaapi.remove_pointer(new_type)
+            return RECAST_STRUCTURE, struct_name, target.cexpr.m + off_delta, new_type
+
+    @staticmethod
+    def process_branch(nodes, idx = 0):
+        target = nodes[-1]
+        types = collections.OrderedDict()
+        opcodes = []
+        new_type = None
+        asg_type = None
+        ref_cnt = 0
+        ptr_cnt = 0
+        off_delta = 0
+        while nodes[idx] != target:
+            item = nodes[idx]
+            opcodes.append(item.op)
+            if item.op == idaapi.cot_cast:
+                types[item] = item.cexpr.type
+                if new_type is None:
+                    new_type = item.cexpr.type
+            elif item.op == idaapi.cot_asg:
+                # asg_type = item.cexpr.type
+                second_type = RecastStructMember.process_asg_second_branch(nodes[idx:])
+                if target.type != second_type:
+                    types[item] = item.cexpr.type
+                    asg_type = second_type
+            elif item.op == idaapi.cot_ref:
+                ref_cnt += 1
+            elif item.op == idaapi.cot_ptr:
+                types[item] = item.cexpr.type
+                if new_type is None:
+                    new_type = item.cexpr.type
+                ptr_cnt += 1
+            elif item.op in (idaapi.cot_add, idaapi.cot_idx):
+                types[item] = item.cexpr.type
+                if item.x.op == idaapi.cot_num or item.y.op == idaapi.cot_num:
+                    if new_type is None and item.op == idaapi.cot_add:
+                        new_type = item.cexpr.type
+                    num = item.cexpr.y.n._value if item.cexpr.x.index == nodes[idx + 1].index else item.cexpr.x.n._value
+                    off_delta += (num * idaapi.remove_pointer(item.cexpr.type).get_size())
+                else:
+                    return None
+            idx += 1
+        if asg_type and new_type is None:
+            new_type = asg_type
+        if new_type:
+            struct_name = target.cexpr.x.type.get_pointed_object().dstr() if target.op == idaapi.cot_memptr else target.cexpr.x.type.dstr()
+            new_type = RecastStructMember.resolve_references(new_type,ref_cnt,ptr_cnt)
+            if new_type.is_ptr() and idaapi.cot_idx not in opcodes and (Helper.is_gap(struct_name,target.cexpr.m + off_delta) or Helper.get_struct_member_type(struct_name,target.cexpr.m + off_delta).is_array()):
+                new_type = new_type.get_pointed_object()
+            return RECAST_STRUCTURE, struct_name, target.cexpr.m + off_delta, new_type
 
     def activate(self, ctx):
         hx_view = idaapi.get_tform_vdui(ctx.form if ida_pro.IDA_SDK_VERSION < 700 else ctx.widget)
         result = self.check(hx_view.cfunc, hx_view.item)
 
-        if result:
-            struct_name, member_offset, cast_helper = result
+        if result[0] == RECAST_HELPER:
+            struct_name, member_offset, cast_helper = result[1:]
             sid = idaapi.get_struc_id(struct_name)
             if sid != idaapi.BADADDR:
                 sptr = idaapi.get_struc(sid)
@@ -1632,6 +2063,98 @@ class RecastStructMember(idaapi.action_handler_t):
                         idc.AddStrucMember(sptr.id,member_name if i == 0 else "field_%X"%(member_offset + i), member_offset+i, idaapi.FF_DATA|idaapi.FF_WORD,idaapi.BADADDR, 2)
                 hx_view.refresh_view(True)
 
+        elif result[0] == RECAST_STRUCTURE:
+            structure_name, field_offset, new_type = result[1:]
+            sid = idaapi.get_struc_id(structure_name)
+            if sid != idaapi.BADADDR:
+                sptr = idaapi.get_struc(sid)
+                mptr = idaapi.get_member(sptr, field_offset)
+                if mptr is None:
+                    if idaapi.add_struc_member(sptr, "field_%X" % field_offset, field_offset,
+                                               idaapi.FF_DATA | idaapi.FF_BYTE, None, 1) != 0:
+                        print "Error on add_struc_member!"
+                    mptr = idaapi.get_member(sptr, field_offset)
+                elif mptr.soff != field_offset:
+                    if not idaapi.del_struc_member(sptr, mptr.soff):
+                        print "Error on del_struc_member!"
+                    if idaapi.add_struc_member(sptr, "field_%X" % field_offset, field_offset,
+                                               idaapi.FF_DATA | idaapi.FF_BYTE, None, 1) != 0:
+                        print "Error on add_struc_member!"
+                    mptr = idaapi.get_member(sptr, field_offset)
+                else:
+                    tif = idaapi.tinfo_t()
+                    idaapi.get_member_tinfo2(mptr, tif)
+                    if tif.is_array():
+                        if not idaapi.del_struc_member(sptr, mptr.soff):
+                            print "Error on del_struc_member!"
+                        if idaapi.add_struc_member(sptr, "field_%X" % field_offset, field_offset,
+                                                   idaapi.FF_DATA | idaapi.FF_BYTE, None, 1) != 0:
+                            print "Error on add_struc_member!"
+                        mptr = idaapi.get_member(sptr, field_offset)
+                rc = idaapi.set_member_tinfo2(sptr, mptr, field_offset, new_type,
+                                              idaapi.SET_MEMTI_MAY_DESTROY)
+                if rc != 1:
+                    print ("set_member_tinfo2 rc = %d" % rc)
+                hx_view.refresh_view(True)
+
+
+    def update(self, ctx):
+        if ida_pro.IDA_SDK_VERSION < 700:
+            if ctx.form_title[0:10] == "Pseudocode":
+                return idaapi.AST_ENABLE_FOR_FORM
+        else:
+            if ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
+                return idaapi.AST_ENABLE_FOR_FORM
+        return idaapi.AST_DISABLE_FOR_FORM
+
+
+class TakeTypeAsName(idaapi.action_handler_t):
+
+    name = "my:TakeTypeAsName"
+    description = "Take Type As Name"
+    hotkey = ""
+    ForPopup = True
+
+    def __init__(self):
+        idaapi.action_handler_t.__init__(self)
+
+    @staticmethod
+    def check(cfunc, ctree_item):
+        if ctree_item.citype == idaapi.VDI_EXPR:
+            if ctree_item.it.op in (idaapi.cot_memptr, idaapi.cot_memref):
+                tp_name = idaapi.remove_pointer(ctree_item.e.type).dstr()
+                struct_name = idaapi.remove_pointer(ctree_item.e.x.type).dstr()
+                if idaapi.get_type_ordinal(idaapi.cvar.idati, struct_name) and idaapi.get_type_ordinal(idaapi.cvar.idati, tp_name):
+                    sid = idaapi.get_struc_id(struct_name)
+                    if sid != idaapi.BADADDR:
+                        sptr = idaapi.get_struc(sid)
+                        mptr = idaapi.get_member(sptr, ctree_item.e.m)
+                        if tp_name not in idaapi.get_member_name2(mptr.id):
+                            return True
+            elif ctree_item.it.op == idaapi.cot_var:
+                lv = cfunc.get_lvars()[ctree_item.e.v.idx]
+                lv_type_name = idaapi.remove_pointer(lv.tif).dstr()
+                if idaapi.get_type_ordinal(idaapi.cvar.idati,lv_type_name) and lv_type_name not in lv.name:
+                    return True
+
+    def activate(self, ctx):
+        hx_view = idaapi.get_tform_vdui(ctx.form if ida_pro.IDA_SDK_VERSION < 700 else ctx.widget)
+        item = hx_view.item.e
+        if item.op in (idaapi.cot_memptr, idaapi.cot_memref):
+            offset = item.m
+            tp_name = "p" if item.type.is_ptr() else "o_"
+            tp_name = tp_name + idaapi.remove_pointer(item.type).dstr()
+            struct_name = idaapi.remove_pointer(item.x.type).dstr()
+            sid = idaapi.get_struc_id(struct_name)
+            sptr = idaapi.get_struc(sid)
+            idaapi.set_member_name(sptr,offset,tp_name)
+            hx_view.refresh_view(True)
+        elif item.op == idaapi.cot_var:
+            lv = hx_view.cfunc.get_lvars()[item.v.idx]
+            tp_name = "p" if lv.tif.is_ptr() else "o_"
+            tp_name = tp_name + idaapi.remove_pointer(lv.tif).dstr()
+            hx_view.rename_lvar(lv,tp_name,True)
+            hx_view.refresh_view(True)
 
     def update(self, ctx):
         if ida_pro.IDA_SDK_VERSION < 700:
@@ -1672,6 +2195,42 @@ class SwapThenElse(idaapi.action_handler_t):
             hx_view.refresh_ctext()
 
             InversionInfo(hx_view.cfunc.entry_ea).switch_inverted(insn.ea)
+
+    def update(self, ctx):
+        if ida_pro.IDA_SDK_VERSION < 700:
+            if ctx.form_title[0:10] == "Pseudocode":
+                return idaapi.AST_ENABLE_FOR_FORM
+        else:
+            if ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
+                return idaapi.AST_ENABLE_FOR_FORM
+        return idaapi.AST_DISABLE_FOR_FORM
+
+
+class ModifyArrayIndexes(idaapi.action_handler_t):
+
+    name = "my:ModifyArrayIndexes"
+    description = "Modify Array Indexes"
+    hotkey = ""
+    ForPopup = True
+
+    def __init__(self):
+        idaapi.action_handler_t.__init__(self)
+
+    @staticmethod
+    def check(cfunc, ctree_item):
+        if ctree_item.citype == idaapi.VDI_EXPR and ctree_item.it.op in (idaapi.cot_memptr, idaapi.cot_memref) and cfunc.body.find_parent_of(ctree_item.it).op == idaapi.cot_idx:
+            rc = Helper.get_branch(cfunc,ctree_item)
+            if rc:
+                for node in rc:
+                    if node.op == idaapi.cot_idx:
+                        field_info = (node.x.m,node.x.x.type)
+                        index = node.y
+
+
+
+    def activate(self, ctx):
+        hx_view = idaapi.get_tform_vdui(ctx.form if ida_pro.IDA_SDK_VERSION < 700 else ctx.widget)
+        pass
 
     def update(self, ctx):
         if ida_pro.IDA_SDK_VERSION < 700:

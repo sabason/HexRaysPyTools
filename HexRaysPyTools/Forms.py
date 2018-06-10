@@ -2,6 +2,7 @@ import idaapi
 # import PySide.QtGui as QtGui
 # import PySide.QtCore as QtCore
 from HexRaysPyTools.Cute import *
+import HexRaysPyTools.Core.ArrayCorrector as ArrayCorrector
 import ida_pro
 
 fDebug = False
@@ -149,6 +150,8 @@ class StructureBuilder(idaapi.PluginForm):
         btn_pack = QtGui.QPushButton("&Pack")
         btn_unpack = QtGui.QPushButton("&Unpack")
         btn_remove = QtGui.QPushButton("&Remove")
+        btn_ArrCorrect = QtGui.QPushButton("Array corrections")
+        btn_ArrCorrect.setFixedWidth(100)
         btn_clear = QtGui.QPushButton("Clear")  # Clear button doesn't have shortcut because it can fuck up all work
         btn_recognize = QtGui.QPushButton("Recognize Shape")
         btn_config = QtGui.QPushButton("Configure features")
@@ -184,6 +187,7 @@ class StructureBuilder(idaapi.PluginForm):
         grid_box.addWidget(btn_pack, 1, 1)
         grid_box.addWidget(btn_unpack, 1, 2)
         grid_box.addWidget(btn_remove, 1, 3)
+        grid_box.addWidget(btn_ArrCorrect, 1, 4)
         grid_box.addItem(QtGui.QSpacerItem(20, 20, QtGui.QSizePolicy.Expanding), 1, 5)
         grid_box.addWidget(btn_recognize, 1, 5, 1, 6)
         grid_box.addWidget(btn_clear, 1, 6)
@@ -196,6 +200,7 @@ class StructureBuilder(idaapi.PluginForm):
 
         btn_finalize.clicked.connect(lambda: self.structure_model.finalize())
         btn_config.clicked.connect(lambda: hex_pytools_config.modify())
+        btn_ArrCorrect.clicked.connect(lambda: ArrayCorrector.button_click())
         btn_disable.clicked.connect(lambda: self.structure_model.disable_rows(struct_view.selectedIndexes()))
         btn_enable.clicked.connect(lambda: self.structure_model.enable_rows(struct_view.selectedIndexes()))
         btn_origin.clicked.connect(lambda: self.structure_model.set_origin(struct_view.selectedIndexes()))

@@ -1,3 +1,5 @@
+import ida_frame
+import ida_struct
 import idaapi
 import idautils
 import idc
@@ -9,7 +11,7 @@ import re
 temporary_structure = None
 demangled_names = {}
 potential_negatives = {}
-
+name_regex = re.compile(r"^a[\d]*[a]?$")
 
 def init_demangled_names(*args):
     """
@@ -207,6 +209,28 @@ def search_duplicate_fields(udt_data):
         default_dict[udt_member.name].append(idx)
     return [indices for indices in default_dict.values() if len(indices) > 1]
 
+def is_gap(structure_name,field_offset):
+    sid = idaapi.get_struc_id(structure_name)
+    if sid != idaapi.BADADDR:
+        sptr = idaapi.get_struc(sid)
+        mptr = idaapi.get_member(sptr, field_offset)
+        if mptr:
+            return False
+        else:
+            return True
+
+
+def get_struct_member_type(structure_name, field_offset):
+    sid = idaapi.get_struc_id(structure_name)
+    if sid != idaapi.BADADDR:
+        sptr = idaapi.get_struc(sid)
+        mptr = idaapi.get_member(sptr, field_offset)
+        if mptr:
+            tif = idaapi.tinfo_t()
+            idaapi.get_member_tinfo2(mptr, tif)
+            return tif
+        return None
+
 
 touched_functions = set()
 
@@ -240,3 +264,27 @@ class FunctionTouchVisitor(idaapi.ctree_parentee_t):
             self.touch_all()
             return True
         return False
+
+
+def fix_automatic_naming(func_data):
+
+    for i in range(0, len(func_data)):
+        if name_regex.match(func_data[i].name):
+            func_data[i].name = ""
+
+
+
+
+    # fn_ea = vu.cfunc.entry_ea
+    # fn = idaapi.get_func(fn_ea)
+    # frame = idaapi.get_frame(fn)
+    # end_off = idaapi.frame_off_savregs(fn)
+    #
+    # for i in range(0, frame.memqty):
+    #     member = frame.get_member(i)
+    #     off = member.soff
+    #     if off >= end_off:
+    #         break
+    #     name = idaapi.get_member_name(member.id)
+    #     if name_regex.match(name):
+    #         ida_struct.set_member_name(frame, off, ida_frame.build_stkvar_name(fn, off))

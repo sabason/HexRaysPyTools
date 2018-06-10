@@ -4,11 +4,14 @@ from HexRaysPyTools.Config import *
 import HexRaysPyTools.Forms as Forms
 import idaapi
 import HexRaysPyTools.Core.NegativeOffsets as NegativeOffsets
+import HexRaysPyTools.Core.ArrayCorrector as ArrayCorrector
 import HexRaysPyTools.Core.Helper as Helper
 import HexRaysPyTools.Core.Const as Const
 from HexRaysPyTools.Core.SpaghettiCode import SpaghettiVisitor, SwapThenElseVisitor
 from HexRaysPyTools.Config import hex_pytools_config, Config
 from HexRaysPyTools.Core.Helper import potential_negatives
+from HexRaysPyTools.test import *
+
 
 #If I forget to add kudos in README
 #Big thanks williballenthin for plugin. https://github.com/williballenthin/ida-netnode
@@ -104,6 +107,30 @@ def hexrays_events_callback(*args):
 
         hx_view = args[1]
         item = hx_view.item
+        if item.citype == idaapi.VDI_EXPR and item.e.op in (idaapi.cot_memptr, idaapi.cot_memref) and item.e.x.op in (idaapi.cot_memptr, idaapi.cot_memref):
+            vtable_tinfo =  item.e.x.type
+            if vtable_tinfo.is_ptr():
+                vtable_tinfo = vtable_tinfo.get_pointed_object()
+            n = Netnode("$ VTables")
+            vt_name = vtable_tinfo.get_type_name()
+            if vt_name in n:
+                method_offset = item.e.m
+                l = n[vt_name]
+                # print l
+                info = idaapi.get_inf_structure()
+                if not Const.EA64:
+                    ptr_size = 4
+                else:
+                    ptr_size = 8
+                # else idc.__EA64__:
+                #     ptr_size = 8
+                # else:
+                #     ptr_size = 2
+                if method_offset % ptr_size == 0 and method_offset / ptr_size < len(l):
+                    idaapi.open_pseudocode(l[method_offset / ptr_size] + idaapi.get_imagebase(), 0)
+                    return 1
+
+
         if item.citype == idaapi.VDI_EXPR and Helper.is_func_call(item,hx_view.cfunc) and item.e.op in (idaapi.cot_memptr, idaapi.cot_memref) \
             and hx_view.cfunc.body.find_parent_of(item.e).op not in (idaapi.cot_memref, idaapi.cot_memptr):
             # Look if we double clicked on expression that is member pointer. Then get tinfo_t of  the structure.
@@ -119,6 +146,11 @@ def hexrays_events_callback(*args):
                 method_offset = item.e.m
                 class_tinfo = item.e.x.x.type.get_pointed_object()
                 vtable_offset = item.e.x.m
+            elif item.e.op == idaapi.cot_memptr and item.e.x.op == idaapi.cot_ptr:
+                vtable_tinfo = item.e.x.type.get_pointed_object()
+                method_offset = item.e.m
+                class_tinfo = None
+                vtable_offset = None
             elif item.e.op == idaapi.cot_memref and item.e.x.op == idaapi.cot_memptr and not item.e.x.type.is_ptr():
                 vtable_tinfo = item.e.x.type
                 method_offset = item.e.m
@@ -142,14 +174,17 @@ def hexrays_events_callback(*args):
                 l = n[vt_name]
                 #print l
                 info = idaapi.get_inf_structure()
-                if info.is_32bit():
+                if not Const.EA64:
                     ptr_size = 4
-                elif info.is_64bit():
-                    ptr_size = 8
                 else:
-                    ptr_size = 2
+                    ptr_size = 8
+                # else idc.__EA64__:
+                #     ptr_size = 8
+                # else:
+                #     ptr_size = 2
                 if method_offset%ptr_size == 0 and method_offset/ptr_size < len(l):
                     idaapi.open_pseudocode(l[method_offset/ptr_size] + idaapi.get_imagebase(), 0)
+                    return 1
 
 
     elif hexrays_event == idaapi.hxe_maturity:
@@ -192,6 +227,20 @@ def hexrays_events_callback(*args):
                 visitor = NegativeOffsets.ReplaceVisitor(negative_lvars)
                 visitor.apply_to(cfunc.body, None)
 
+            # cg = cfunc_graph_t(None)
+            # gb = graph_builder_t(cg)
+            # gb.apply_to(cfunc.body, None)
+            #
+            # import tempfile
+            # fname = tempfile.mktemp(suffix=".gdl")
+            # cg.gen_gdl(fname)
+            # ida_gdl.display_gdl(fname)
+
+            visitor = ArrayCorrector.ArrayCorrectorVisitorStage1(cfunc)
+            visitor.apply_to(cfunc.body, None)
+            #visitor.recalc_parent_types()
+            del visitor
+
         elif level_of_maturity == idaapi.CMAT_TRANS1:
 
             visitor = SwapThenElseVisitor(cfunc.entry_ea)
@@ -204,6 +253,19 @@ def hexrays_events_callback(*args):
             # print cfunc
             visitor = SpaghettiVisitor()
             visitor.apply_to(cfunc.body, None)
+
+
+
+        # elif level_of_maturity == idaapi.CMAT_FINAL:
+        #     visitor = ArrayCorrector.ArrayCorrectorVisitorStage2(cfunc)
+        #     visitor.apply_to_exprs(cfunc.body, None)
+        #     visitor.recalc_parent_types()
+        #     del visitor
+
+    # if hexrays_event in (idaapi.hxe_open_pseudocode,idaapi.hxe_switch_pseudocode,idaapi.hxe_refresh_pseudocode):
+    #     vu = args[1]
+    #     Helper.fix_automatic_naming(vu)
+
     return 0
 
 
@@ -224,6 +286,7 @@ class MyPlugin(idaapi.plugin_t):
             return idaapi.PLUGIN_SKIP
 
         Helper.temporary_structure = TemporaryStructureModel()
+        ArrayCorrector.load_from_persistent()
         hex_pytools_config = Config()
         for ac in hex_pytools_config.actions:
             if hex_pytools_config.actions[ac]:
@@ -244,6 +307,7 @@ class MyPlugin(idaapi.plugin_t):
         # Actions.register(Actions.RecastItemLeft)
         # Actions.register(Actions.RenameInside)
         # Actions.register(Actions.RenameOutside)
+
 
         idaapi.attach_action_to_menu('View/Open subviews/Local types', Actions.ShowClasses.name, idaapi.SETMENU_APP)
         idaapi.install_hexrays_callback(hexrays_events_callback)
@@ -266,6 +330,7 @@ class MyPlugin(idaapi.plugin_t):
         if Helper.temporary_structure:
             Helper.temporary_structure.clear()
         # Actions.unregister(Actions.CreateVtable)
+        ArrayCorrector.save_to_persistent()
         if hex_pytools_config:
             for ac in hex_pytools_config.actions:
                 if hex_pytools_config.actions[ac]:
