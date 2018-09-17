@@ -3,11 +3,9 @@ import idaapi
 # import PySide.QtCore as QtCore
 from HexRaysPyTools.Cute import *
 import HexRaysPyTools.Core.ArrayCorrector as ArrayCorrector
+from HexRaysPyTools.Core.LVarReplace import ReplaceLVar_button_click
 import ida_pro
 
-fDebug = False
-if fDebug:
-    import pydevd
 
 import Core.Classes
 
@@ -80,8 +78,6 @@ class ConfigFeaturesChooser(idaapi.Choose2 if ida_pro.IDA_SDK_VERSION < 700 else
 class ConfigFeatures(idaapi.Form):
 
     def __init__(self, config):
-        if fDebug:
-            pydevd.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=True)
         self.config = config
         self.EChooser = ConfigFeaturesChooser(self.config.actions,self)
         idaapi.Form.__init__(self,
@@ -132,7 +128,7 @@ class StructureBuilder(idaapi.PluginForm):
         self.init_ui()
 
     def init_ui(self):
-        from HexRaysPyTools.Config import hex_pytools_config
+        from HexRaysPyTools.Settings import hex_pytools_config
         self.parent.setStyleSheet(
             "QTableView {background-color: transparent; selection-background-color: #87bdd8;}"
             "QHeaderView::section {background-color: transparent; border: 0.5px solid;}"
@@ -153,6 +149,7 @@ class StructureBuilder(idaapi.PluginForm):
         # btn_ArrCorrect = QtGui.QPushButton("Array corrections")
         # btn_ArrCorrect.setFixedWidth(100)
         btn_resolve = QtGui.QPushButton("Resolve")
+        btn_ReplaceLVar = QtGui.QPushButton("Repl LVars")
         btn_clear = QtGui.QPushButton("Clear")  # Clear button doesn't have shortcut because it can fuck up all work
         btn_recognize = QtGui.QPushButton("Recognize Shape")
         btn_config = QtGui.QPushButton("Configure features")
@@ -190,6 +187,7 @@ class StructureBuilder(idaapi.PluginForm):
         grid_box.addWidget(btn_remove, 1, 3)
         # grid_box.addWidget(btn_ArrCorrect, 1, 4)
         grid_box.addWidget(btn_resolve, 0, 4)
+        grid_box.addWidget(btn_ReplaceLVar, 1, 4)
         grid_box.addItem(QtGui.QSpacerItem(20, 20, QtGui.QSizePolicy.Expanding), 1, 5)
         grid_box.addWidget(btn_recognize, 1, 5, 1, 6)
         grid_box.addWidget(btn_clear, 1, 6)
@@ -202,6 +200,7 @@ class StructureBuilder(idaapi.PluginForm):
 
         btn_finalize.clicked.connect(lambda: self.structure_model.finalize())
         btn_config.clicked.connect(lambda: hex_pytools_config.modify())
+        btn_ReplaceLVar.clicked.connect(lambda: ReplaceLVar_button_click())
         # btn_ArrCorrect.clicked.connect(lambda: ArrayCorrector.button_click())
         btn_disable.clicked.connect(lambda: self.structure_model.disable_rows(struct_view.selectedIndexes()))
         btn_enable.clicked.connect(lambda: self.structure_model.enable_rows(struct_view.selectedIndexes()))

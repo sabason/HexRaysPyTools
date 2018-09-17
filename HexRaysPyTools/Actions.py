@@ -21,7 +21,9 @@ from HexRaysPyTools.Core.StructureGraph import StructureGraph
 from HexRaysPyTools.Core.TemporaryStructure import VirtualTable, TemporaryStructureModel
 from HexRaysPyTools.Core.VariableScanner import NewShallowSearchVisitor, NewDeepSearchVisitor, DeepReturnVisitor
 from HexRaysPyTools.Core.Helper import FunctionTouchVisitor
-from HexRaysPyTools.Core.Helper import potential_negatives
+from HexRaysPyTools.Core.Helper import potential_negatives, get_closets_ea_with_path
+import HexRaysPyTools.Core.Cache as Cache
+
 #If I forget to add kudos in README
 #Big thanks williballenthin for plugin. https://github.com/williballenthin/ida-netnode
 from HexRaysPyTools.netnode import Netnode
@@ -351,7 +353,7 @@ class ShallowScanVariable(idaapi.action_handler_t):
     ForPopup = True
 
     def __init__(self):
-        self.temporary_structure = Helper.temporary_structure
+        self.temporary_structure = Cache.temporary_structure
         idaapi.action_handler_t.__init__(self)
 
     @staticmethod
@@ -421,13 +423,13 @@ class DeepScanReturn(idaapi.action_handler_t):
     hotkey = None
     ForPopup = True
 
-    def __init__(self, temporary_structure):
-        self.temp_struct = temporary_structure
+    def __init__(self):
+        self.temp_struct = Cache.temporary_structure
         idaapi.action_handler_t.__init__(self)
 
     @staticmethod
     def check(cfunc, ctree_item):
-        if ctree_item.citype == idaapi.VDI_FUNC:
+        if ctree_item.citype == idaapi.VDI_FUNC and not cfunc.entry_ea == idaapi.BADADDR:
             # If we clicked on function
             tinfo = idaapi.tinfo_t()
             cfunc.get_func_type(tinfo)
@@ -455,7 +457,7 @@ class DeepScanFunctions(idaapi.action_handler_t):
     ForPopup = False
 
     def __init__(self):
-        self.temporary_structure = Helper.temporary_structure
+        self.temporary_structure = Cache.temporary_structure
         idaapi.action_handler_t.__init__(self)
 
     def activate(self, ctx):
@@ -764,12 +766,10 @@ class CreateVtable(idaapi.action_handler_t):
 
     def update(self, ctx):
         if ida_pro.IDA_SDK_VERSION < 700:
-            if ctx.form_type == idaapi.BWN_DISASM:
-                idaapi.attach_action_to_popup(ctx.form, None, self.name)
-            return idaapi.AST_ENABLE_FOR_FORM
+            if ctx.form_title[0:10] == "Pseudocode":
+                return idaapi.AST_ENABLE_FOR_FORM
         else:
-            if ctx.form_type == idaapi.BWN_DISASM:
-                idaapi.attach_action_to_popup(ctx.form, None, self.name)
+            if ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
                 return idaapi.AST_ENABLE_FOR_FORM
         return idaapi.AST_DISABLE_FOR_FORM
 
@@ -1785,7 +1785,7 @@ class RecastStructMember(idaapi.action_handler_t):
 
     name = "my:RecastStructMember"
     description = "Recast Struct Member"
-    hotkey = "Shift+L"
+    hotkey = "Shift+M"
     ForPopup = True
 
     def __init__(self):
@@ -2191,6 +2191,7 @@ class RenameUsingAssert(idaapi.action_handler_t):
     name = "my:RenameUsingAssert"
     description = "Rename as assert argument"
     hotkey = None
+    ForPopup = True
 
     def __init__(self):
         idaapi.action_handler_t.__init__(self)
@@ -2252,6 +2253,7 @@ class PropagateName(idaapi.action_handler_t):
     name = "my:PropagateName"
     description = "Propagate name"
     hotkey = "P"
+    ForPopup = True
 
     def __init__(self):
         idaapi.action_handler_t.__init__(self)
@@ -2334,6 +2336,7 @@ class GuessAllocation(idaapi.action_handler_t):
     name = "my:ActionApi"
     description = "Guess allocation"
     hotkey = None
+    ForPopup = True
 
     class StructAllocChoose(Forms.MyChoose):
         def __init__(self, items):
@@ -2472,9 +2475,10 @@ class FindFieldXrefs(idaapi.action_handler_t):
     name = "my:FindFieldXrefs"
     description = "Field Xrefs"
     hotkey = "Ctrl+X"
+    ForPopup = True
 
     @staticmethod
-    def check(ctree_item):
+    def check(cfunc, ctree_item):
         return ctree_item.citype == idaapi.VDI_EXPR and \
                ctree_item.it.to_specific_type.op in (idaapi.cot_memptr, idaapi.cot_memref)
 
@@ -2482,7 +2486,7 @@ class FindFieldXrefs(idaapi.action_handler_t):
         hx_view = idaapi.get_widget_vdui(ctx.widget)
         item = hx_view.item
 
-        if not self.check(item):
+        if not self.check(hx_view.cfunc,item):
             return
 
         data = []
@@ -2516,3 +2520,69 @@ class FindFieldXrefs(idaapi.action_handler_t):
         if ctx.widget_type == idaapi.BWN_PSEUDOCODE:
             return idaapi.AST_ENABLE_FOR_FORM
         return idaapi.AST_DISABLE_FOR_FORM
+
+
+class ReplaceLVar(idaapi.action_handler_t):
+    name = "my:ReplaceLVar"
+    description = "Replace Local Var"
+    hotkey = ""
+    ForPopup = True
+
+    @staticmethod
+    def check(cfunc, ctree_item):
+
+        if ctree_item.citype != idaapi.VDI_EXPR:
+            return False
+        expression = ctree_item.it.to_specific_type
+        if expression.op != idaapi.cot_var:
+            return False
+        return True
+
+    def activate(self, ctx):
+        hx_view = idaapi.get_tform_vdui(ctx.form if ida_pro.IDA_SDK_VERSION < 700 else ctx.widget)
+        cfunc = hx_view.cfunc
+        item = hx_view.item
+        expression = item.it.to_specific_type
+        data = []
+        lvars = cfunc.get_lvars()
+        for i in range(0,len(lvars)):
+            if expression.v.idx != i:
+                data.append([
+                    str(i),
+                    lvars[i].name,
+                    lvars[i].tif.dstr()
+                ])
+
+        chooser = Forms.MyChoose(
+            data,
+            "Choose local variable to repalce",
+            [["idx", 4 | idaapi.Choose2.CHCOL_PLAIN],
+            ["Name", 20 | idaapi.Choose2.CHCOL_PLAIN],
+             ["Type", 40 | idaapi.Choose2.CHCOL_PLAIN]]
+        )
+        idx = chooser.Show(True)
+        if idx == -1:
+            return
+        idx = data[idx][0]
+        # new_lvar = lvars[idx]
+        ea, path = get_closets_ea_with_path(cfunc,expression)
+        func_ea = cfunc.entry_ea
+        n = Netnode("$HexRaysPyTools:ReplacedLVars")
+        # n[func_ea] = {}
+        if func_ea not in n:
+            n[func_ea] = {}
+        l = n[func_ea]
+        path.reverse()
+        l[ea] = (expression.v.idx, path, int(idx,10))
+        n[func_ea] = l
+        hx_view.refresh_view(True)
+
+    def update(self, ctx):
+        if ida_pro.IDA_SDK_VERSION < 700:
+            if ctx.form_title[0:10] == "Pseudocode":
+                return idaapi.AST_ENABLE_FOR_FORM
+        else:
+            if ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
+                return idaapi.AST_ENABLE_FOR_FORM
+        return idaapi.AST_DISABLE_FOR_FORM
+

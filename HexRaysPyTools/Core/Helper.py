@@ -6,7 +6,7 @@ import logging
 import idaapi
 import idautils
 import idc
-import Const
+# import Const
 
 import re
 import HexRaysPyTools.Core.Cache as Cache
@@ -451,3 +451,42 @@ def my_cexpr_t(*args, **kwargs):
 
 def extend_ida():
     idaapi.ctree_parentee_t._find_asm_address = _find_asm_address
+
+
+def get_path_letter(parent, child):
+    if 1 <= parent.op <= 15 or 17 <= parent.op <= 45 or parent.op == 58:
+        if parent.x.index == child.index:
+            return "x"
+        else:
+            return "y"
+    elif (46 <= parent.op <= 60 or parent.op == 67) and parent.op not in (57,58):
+        return "x"
+    elif parent.op == 16:
+        if parent.x.index == child.index:
+            return "x"
+        elif parent.y.index == child.index:
+            return "y"
+        else:
+            return "z"
+    elif parent.op == 57:
+        if parent.x.index == child.index:
+            return "x"
+        else:
+            args = parent.a
+            for i in range(0,len(args)):
+                if args[i].index == child.index:
+                    return "a%d"%i
+    elif parent.op in (61,62,63,64,65,68,69):
+        return "e"
+    else:
+        return "u"
+
+
+def get_closets_ea_with_path(cfunc,item):
+    path = [("e",idaapi.cot_var)]
+    expr = item.to_specific_type
+    while expr.ea == idaapi.BADADDR:
+        parent = cfunc.body.find_parent_of(expr).to_specific_type
+        path.append((get_path_letter(parent,expr),parent.op))
+        expr = parent
+    return expr.ea, path

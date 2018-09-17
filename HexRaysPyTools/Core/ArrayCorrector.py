@@ -172,7 +172,7 @@ class ArrayCorrectorUI(idaapi.Form):
                Storage.pop(sel)
            self.RefreshField(self.controls['cEChooser'])
 
-def button_click():
+def ArrayCorrector_button_click():
     f = ArrayCorrectorUI()
     f.Go()
     del f

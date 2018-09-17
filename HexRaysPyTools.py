@@ -1,19 +1,20 @@
-import logging
+# import logging
 import HexRaysPyTools.Actions as Actions
-import HexRaysPyTools.Core.Cache
+# import HexRaysPyTools.Core.Cache
 from HexRaysPyTools.Core.TemporaryStructure import *
-from HexRaysPyTools.Config import *
 import HexRaysPyTools.Forms as Forms
-import idaapi
+# import idaapi
 import HexRaysPyTools.Core.NegativeOffsets as NegativeOffsets
 import HexRaysPyTools.Core.ArrayCorrector as ArrayCorrector
-import HexRaysPyTools.Core.Helper as Helper
+# import HexRaysPyTools.Core.Helper as Helper
 import HexRaysPyTools.Core.Cache as Cache
 import HexRaysPyTools.Core.Const as Const
 from HexRaysPyTools.Core.SpaghettiCode import SpaghettiVisitor, SwapThenElseVisitor
-from HexRaysPyTools.Config import hex_pytools_config, Config
+from HexRaysPyTools.Settings import hex_pytools_config, Config
 from HexRaysPyTools.Core.Helper import potential_negatives
-from HexRaysPyTools.test import *
+# from HexRaysPyTools.test import *
+import HexRaysPyTools.Settings as Settings
+from HexRaysPyTools.Core.LVarReplace import process_replace_lvars
 
 from HexRaysPyTools.Core.StructXrefs import *
 
@@ -30,7 +31,7 @@ def hexrays_events_callback(*args):
     if fDebug:
         pydevd.settrace('localhost', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
     hexrays_event = args[0]
-    from HexRaysPyTools.Config import hex_pytools_config
+    from HexRaysPyTools.Settings import hex_pytools_config
     if hexrays_event == idaapi.hxe_populating_popup:
         form, popup, hx_view = args[1:]
         item = hx_view.item  # current ctree_item_t
@@ -263,9 +264,14 @@ def hexrays_events_callback(*args):
             # print cfunc
             visitor = SpaghettiVisitor()
             visitor.apply_to(cfunc.body, None)
+            process_replace_lvars(cfunc)
 
         elif level_of_maturity == idaapi.CMAT_FINAL:
             StructXrefVisitor(cfunc).process()
+
+
+
+
 
 
 
@@ -298,13 +304,19 @@ class MyPlugin(idaapi.plugin_t):
         if not idaapi.init_hexrays_plugin():
             print "[ERROR] Failed to initialize Hex-Rays SDK"
             return idaapi.PLUGIN_SKIP
-
+        # from HexRaysPyTools.Settings import hex_pytools_config, Config
+        if Settings.hex_pytools_config is None:
+            Settings.Config()
+        Settings.load_settings()
+        logging.basicConfig(format='[%(levelname)s] %(message)s\t(%(module)s:%(funcName)s)')
+        logging.root.setLevel(Settings.DEBUG_MESSAGE_LEVEL)
         Cache.temporary_structure = TemporaryStructureModel()
         ArrayCorrector.load_from_persistent()
-        hex_pytools_config = Config()
-        for ac in hex_pytools_config.actions:
-            if hex_pytools_config.actions[ac]:
-                Actions.register(hex_pytools_config.actions_refs[ac])
+        if Settings.hex_pytools_config is None:
+            Settings.hex_pytools_config = Config()
+        for ac in Settings.hex_pytools_config.actions:
+            if Settings.hex_pytools_config.actions[ac]:
+                Actions.register(Settings.hex_pytools_config.actions_refs[ac])
 
         # Actions.register(Actions.CreateVtable)
         # Actions.register(Actions.ShowGraph)
@@ -354,10 +366,10 @@ class MyPlugin(idaapi.plugin_t):
             Cache.temporary_structure.clear()
         # Actions.unregister(Actions.CreateVtable)
         ArrayCorrector.save_to_persistent()
-        if hex_pytools_config:
-            for ac in hex_pytools_config.actions:
-                if hex_pytools_config.actions[ac]:
-                    Actions.unregister(hex_pytools_config.actions_refs[ac])
+        if Settings.hex_pytools_config:
+            for ac in Settings.hex_pytools_config.actions:
+                if Settings.hex_pytools_config.actions[ac]:
+                    Actions.unregister(Settings.hex_pytools_config.actions_refs[ac])
 
         # Actions.unregister(Actions.ShowGraph)
         # Actions.unregister(Actions.ShowClasses)
@@ -394,4 +406,5 @@ def PLUGIN_ENTRY():
     idaapi.notify_when(idaapi.NW_OPENIDB, Cache.init_imported_ea)
     idaapi.notify_when(idaapi.NW_OPENIDB, Cache.reset_touched_functions)
     Helper.extend_ida()
+
     return MyPlugin()
