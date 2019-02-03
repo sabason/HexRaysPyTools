@@ -181,6 +181,7 @@ def hexrays_events_callback(*args):
                 return 1
             n = Netnode("$ VTables")
             vt_name = vtable_tinfo.get_type_name()
+            struct_id = idaapi.get_struc_id(vt_name)
             if vt_name in n:
                 l = n[vt_name]
                 #print l
@@ -195,6 +196,21 @@ def hexrays_events_callback(*args):
                 #     ptr_size = 2
                 if method_offset%ptr_size == 0 and method_offset/ptr_size < len(l):
                     idaapi.open_pseudocode(l[method_offset/ptr_size] + idaapi.get_imagebase(), 0)
+                    return 1
+            elif struct_id in n:
+                l = n[struct_id]
+                # print l
+                info = idaapi.get_inf_structure()
+                if not Const.EA64:
+                    ptr_size = 4
+                else:
+                    ptr_size = 8
+                # else idc.__EA64__:
+                #     ptr_size = 8
+                # else:
+                #     ptr_size = 2
+                if method_offset % ptr_size == 0 and method_offset / ptr_size < len(l):
+                    idaapi.open_pseudocode(l[method_offset / ptr_size] + idaapi.get_imagebase(), 0)
                     return 1
 
 
