@@ -809,6 +809,7 @@ class CreateVtable(idaapi.action_handler_t):
         i = 0
         n = Netnode("$ VTables")
         n[name + "_vtbl"] = []
+        n[struct_id] = []
         info = idaapi.get_inf_structure()
         if not Const.EA64:
             ptr_size = 4
@@ -825,7 +826,7 @@ class CreateVtable(idaapi.action_handler_t):
 
         opinf = idaapi.opinfo_t()
         opinf.ri = refinf
-        while (idaapi.isFunc(idaapi.getFlags(idc.Dword(addr))) and (self.GetXrefCnt(addr) == 0 or i == 0) or idc.Dword(addr) != 0) is True:
+        while (idc.Dword(addr) != 0 and idaapi.isFunc(idaapi.getFlags(idc.Dword(addr))) and (self.GetXrefCnt(addr) == 0 or i == 0)) is True:
             c = idaapi.get_full_long(addr)
             methName = ""
             # print "c = 0x%08X" % c
@@ -835,6 +836,8 @@ class CreateVtable(idaapi.action_handler_t):
                     methName = idaapi.get_name(idaapi.BADADDR,c)
                     if isMangled(methName):
                         methName = idaapi.demangle_name(methName, 0)[:idaapi.demangle_name(methName, 0).find("(")]
+                        if methName.count("::")> 1 or methName.count("<") or methName.count(">"):
+                            methName = name + methName[methName.rfind("::"):]
                         methName = methName.replace("~", "dtor_").replace("==", "_equal")
                 else:
                     methName = name + "__" + "virt_%X" % c
@@ -851,6 +854,9 @@ class CreateVtable(idaapi.action_handler_t):
                         e = idaapi.add_struc_member(sptr, (methName + "_%d"%l), i * ptr_size, idaapi.FF_0OFF | fSize | idaapi.FF_DATA,
                                                     opinf, ptr_size)
                         l = l + 1
+                        if l > 50:
+                            Warning("Wrong function name!")
+                            return
                 elif e != -2 and e != idaapi.BADADDR:
                     Warning("Error adding a vtable entry!")
                     return
@@ -861,6 +867,10 @@ class CreateVtable(idaapi.action_handler_t):
             l = n[name + "_vtbl"]
             l.append((c - idaapi.get_imagebase()) if c else idaapi.BADADDR)
             n[name + "_vtbl"] = l
+            l = n[struct_id]
+            l.append((c - idaapi.get_imagebase()) if c else idaapi.BADADDR)
+            n[struct_id] = l
+
 
             i = i + 1
             addr = addr + ptr_size
@@ -1587,9 +1597,11 @@ class SimpleCreateStruct(idaapi.action_handler_t):
         ]
         def make_field_str(field_num, fsize, pad=0):
             ret = ""
+            # i = 0
             for i in range(0, field_num):
                 ret += struct.pack(">B", len("field_%X" % (i * fsize)) + 1) + "field_%X" % (i * fsize)
             k = 1
+            i = field_num - 1
             while pad > 0:
                 ret += struct.pack(">B", len("field_%X" % (i * fsize + k)) + 1) + "field_%X" % (i * fsize + k)
                 pad -= 1
@@ -1675,7 +1687,7 @@ class SimpleCreateStruct(idaapi.action_handler_t):
         # typ_fieldcmts = ""
         sclass = ctypes.c_ulong(0)
         sclass = ctypes.byref(sclass)
-        c_compact_numbered_types(c_my_til,1,0,0)
+        # c_compact_numbered_types(c_my_til,1,0,0)
         # c_my_til = c_get_idati()
         pname = ctypes.c_char_p(name)
         if type_ord != 0:
@@ -2522,67 +2534,67 @@ class FindFieldXrefs(idaapi.action_handler_t):
         return idaapi.AST_DISABLE_FOR_FORM
 
 
-class ReplaceLVar(idaapi.action_handler_t):
-    name = "my:ReplaceLVar"
-    description = "Replace Local Var"
-    hotkey = ""
-    ForPopup = True
-
-    @staticmethod
-    def check(cfunc, ctree_item):
-
-        if ctree_item.citype != idaapi.VDI_EXPR:
-            return False
-        expression = ctree_item.it.to_specific_type
-        if expression.op != idaapi.cot_var:
-            return False
-        return True
-
-    def activate(self, ctx):
-        hx_view = idaapi.get_tform_vdui(ctx.form if ida_pro.IDA_SDK_VERSION < 700 else ctx.widget)
-        cfunc = hx_view.cfunc
-        item = hx_view.item
-        expression = item.it.to_specific_type
-        data = []
-        lvars = cfunc.get_lvars()
-        for i in range(0,len(lvars)):
-            if expression.v.idx != i:
-                data.append([
-                    str(i),
-                    lvars[i].name,
-                    lvars[i].tif.dstr()
-                ])
-
-        chooser = Forms.MyChoose(
-            data,
-            "Choose local variable to repalce",
-            [["idx", 4 | idaapi.Choose2.CHCOL_PLAIN],
-            ["Name", 20 | idaapi.Choose2.CHCOL_PLAIN],
-             ["Type", 40 | idaapi.Choose2.CHCOL_PLAIN]]
-        )
-        idx = chooser.Show(True)
-        if idx == -1:
-            return
-        idx = data[idx][0]
-        # new_lvar = lvars[idx]
-        ea, path = get_closets_ea_with_path(cfunc,expression)
-        func_ea = cfunc.entry_ea
-        n = Netnode("$HexRaysPyTools:ReplacedLVars")
-        # n[func_ea] = {}
-        if func_ea not in n:
-            n[func_ea] = {}
-        l = n[func_ea]
-        path.reverse()
-        l[ea] = (expression.v.idx, path, int(idx,10))
-        n[func_ea] = l
-        hx_view.refresh_view(True)
-
-    def update(self, ctx):
-        if ida_pro.IDA_SDK_VERSION < 700:
-            if ctx.form_title[0:10] == "Pseudocode":
-                return idaapi.AST_ENABLE_FOR_FORM
-        else:
-            if ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
-                return idaapi.AST_ENABLE_FOR_FORM
-        return idaapi.AST_DISABLE_FOR_FORM
+# class ReplaceLVar(idaapi.action_handler_t):
+#     name = "my:ReplaceLVar"
+#     description = "Replace Local Var"
+#     hotkey = ""
+#     ForPopup = True
+#
+#     @staticmethod
+#     def check(cfunc, ctree_item):
+#
+#         if ctree_item.citype != idaapi.VDI_EXPR:
+#             return False
+#         expression = ctree_item.it.to_specific_type
+#         if expression.op != idaapi.cot_var:
+#             return False
+#         return True
+#
+#     def activate(self, ctx):
+#         hx_view = idaapi.get_tform_vdui(ctx.form if ida_pro.IDA_SDK_VERSION < 700 else ctx.widget)
+#         cfunc = hx_view.cfunc
+#         item = hx_view.item
+#         expression = item.it.to_specific_type
+#         data = []
+#         lvars = cfunc.get_lvars()
+#         for i in range(0,len(lvars)):
+#             if expression.v.idx != i:
+#                 data.append([
+#                     str(i),
+#                     lvars[i].name,
+#                     lvars[i].tif.dstr()
+#                 ])
+#
+#         chooser = Forms.MyChoose(
+#             data,
+#             "Choose local variable to repalce",
+#             [["idx", 4 | idaapi.Choose2.CHCOL_PLAIN],
+#             ["Name", 20 | idaapi.Choose2.CHCOL_PLAIN],
+#              ["Type", 40 | idaapi.Choose2.CHCOL_PLAIN]]
+#         )
+#         idx = chooser.Show(True)
+#         if idx == -1:
+#             return
+#         idx = data[idx][0]
+#         # new_lvar = lvars[idx]
+#         ea, path = get_closets_ea_with_path(cfunc,expression)
+#         func_ea = cfunc.entry_ea
+#         n = Netnode("$HexRaysPyTools:ReplacedLVars")
+#         # n[func_ea] = {}
+#         if func_ea not in n:
+#             n[func_ea] = {}
+#         l = n[func_ea]
+#         path.reverse()
+#         l[ea] = (expression.v.idx, path, int(idx,10))
+#         n[func_ea] = l
+#         hx_view.refresh_view(True)
+#
+#     def update(self, ctx):
+#         if ida_pro.IDA_SDK_VERSION < 700:
+#             if ctx.form_title[0:10] == "Pseudocode":
+#                 return idaapi.AST_ENABLE_FOR_FORM
+#         else:
+#             if ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
+#                 return idaapi.AST_ENABLE_FOR_FORM
+#         return idaapi.AST_DISABLE_FOR_FORM
 
