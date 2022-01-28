@@ -16,7 +16,7 @@ Plugin for IDA Pro
 # About fork!
 
 It's my fork of plugin with tuning for my convenience of work. Changes:
-- Main change. I added "Feature Config", which allows you to enable and disable certain elements of the pop-out menus and some another functionalities. I don't use central feature "Reconstruct type", but various auxiliary recasts functions is amazing.
+- Main change. I added "Feature Config", which allows you to enable and disable certain elements of the pop-out menus and some another functionalities. I don't use central feature "Reconstruct type", but various auxiliary recasts functions is amazing. Config can be obtain in plugin form through Edit->Plugins->HexRaysPyTools "Configure features" button
 - I added my own version of creating of type and virtual tables. In my variant, a simple structure of a certain size with fields of a given width is created. Further, the fields are detailed during analysis.
 - Added new feature to pop-out menu "TakeTypeAsName" that works for variables and structure fields.
 - And rewrote parsing for type recasts. I think my variant more stable and correct.
