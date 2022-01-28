@@ -1,7 +1,14 @@
 from collections import namedtuple
 import idaapi
+import idc
+
 from . import actions
 import HexRaysPyTools.core.helper as helper
+from ..settings import get_config
+
+fDebug = False
+if fDebug:
+    import pydevd_pycharm
 
 
 RecastLocalVariable = namedtuple('RecastLocalVariable', ['recast_tinfo', 'local_variable'])
@@ -59,17 +66,17 @@ class RecastItemLeft(actions.HexRaysPopupAction):
                 # g_var = (TYPE ) ...;
                 return RecastGlobalVariable(right_tinfo, expression.x.obj_ea)
 
-            elif expression.x.op == idaapi.cot_memptr:
-                # struct->member = (TYPE ) ...;
-                struct_name = expression.x.x.type.get_pointed_object().dstr()
-                struct_offset = expression.x.m
-                return RecastStructure(right_tinfo, struct_name, struct_offset)
-
-            elif expression.x.op == idaapi.cot_memref:
-                # struct.member = (TYPE ) ...;
-                struct_name = expression.x.x.type.dstr()
-                struct_offset = expression.x.m
-                return RecastStructure(right_tinfo, struct_name, struct_offset)
+            # elif expression.x.op == idaapi.cot_memptr:
+            #     # struct->member = (TYPE ) ...;
+            #     struct_name = expression.x.x.type.get_pointed_object().dstr()
+            #     struct_offset = expression.x.m
+            #     return RecastStructure(right_tinfo, struct_name, struct_offset)
+            #
+            # elif expression.x.op == idaapi.cot_memref:
+            #     # struct.member = (TYPE ) ...;
+            #     struct_name = expression.x.x.type.dstr()
+            #     struct_offset = expression.x.m
+            #     return RecastStructure(right_tinfo, struct_name, struct_offset)
 
         elif expression.op == idaapi.cit_return:
             child = child or expression.creturn.expr
@@ -86,7 +93,7 @@ class RecastItemLeft(actions.HexRaysPopupAction):
                 return RecastReturn(child.type, cfunc.entry_ea)
 
         elif expression.op == idaapi.cot_call:
-            if expression.x == child:
+            if expression.x == child or expression.x.op == idaapi.cot_helper:
                 return
             func_ea = expression.x.obj_ea
             arg_index, param_tinfo = helper.get_func_argument_info(expression, child)
@@ -160,7 +167,7 @@ class RecastItemLeft(actions.HexRaysPopupAction):
 
         elif isinstance(ri, RecastGlobalVariable):
             idaapi.apply_tinfo(ri.global_variable_ea, ri.recast_tinfo, idaapi.TINFO_DEFINITE)
-
+        #TODO: remove arguments name in tinfo
         elif isinstance(ri, RecastArgument):
             if ri.recast_tinfo.is_array():
                 ri.recast_tinfo.convert_array_to_ptr()
@@ -257,12 +264,12 @@ class RecastItemRight(RecastItemLeft):
             func_ea = expression.x.x.obj_ea
             return RecastReturn(tinfo, func_ea)
 
-        elif expression.x.op == idaapi.cot_memptr:
-            # (TYPE) var->member;
-            idaapi.update_action_label(RecastItemRight.name, "Recast Field")
-            struct_name = expression.x.x.type.get_pointed_object().dstr()
-            struct_offset = expression.x.m
-            return RecastStructure(tinfo, struct_name, struct_offset)
+        # elif expression.x.op == idaapi.cot_memptr:
+        #     # (TYPE) var->member;
+        #     idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+        #     struct_name = expression.x.x.type.get_pointed_object().dstr()
+        #     struct_offset = expression.x.m
+        #     return RecastStructure(tinfo, struct_name, struct_offset)
 
     @staticmethod
     def _check_potential_array(cfunc, expr):
@@ -292,6 +299,285 @@ class RecastItemRight(RecastItemLeft):
                     ))
                     return RecastLocalVariable(char_array_tinfo, variable)
 
+def get_branch(cfunc,item):
+    if type(item) is idaapi.ctree_item_t:
+        item = item.it
+    rc = [item.cexpr]
+    while True:
+        parent = cfunc.body.find_parent_of(item)
+        if not parent or not parent.is_expr():
+            break
+        rc.append(parent.cexpr)
+        item = parent
+    rc.reverse()
+    return rc
 
-actions.action_manager.register(RecastItemLeft())
-actions.action_manager.register(RecastItemRight())
+def is_gap(structure_name,field_offset):
+    sid = idaapi.get_struc_id(structure_name)
+    if sid != idaapi.BADADDR:
+        sptr = idaapi.get_struc(sid)
+        mptr = idaapi.get_member(sptr, field_offset)
+        if mptr:
+            return False
+        else:
+            return True
+
+def get_struct_member_type(structure_name, field_offset):
+    sid = idaapi.get_struc_id(structure_name)
+    if sid != idaapi.BADADDR:
+        sptr = idaapi.get_struc(sid)
+        mptr = idaapi.get_member(sptr, field_offset)
+        if mptr:
+            tif = idaapi.tinfo_t()
+            idaapi.get_member_tinfo(tif ,mptr)
+            return tif
+        return None
+
+
+RECAST_HELPER = 1
+RECAST_STRUCTURE = 4
+
+class RecastStructMember(actions.HexRaysPopupAction):
+
+    name = "my:RecastStructMember"
+    description = "Recast Struct Member"
+    hotkey = "Shift+M"
+    ForPopup = True
+
+    def __init__(self):
+        idaapi.action_handler_t.__init__(self)
+
+    @staticmethod
+    def check(hx_view):
+        if fDebug:
+            pydevd_pycharm.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
+        cfunc = hx_view.cfunc
+        ctree_item = hx_view.item
+        if ctree_item.citype == idaapi.VDI_EXPR and ctree_item.it.op in (idaapi.cot_memptr, idaapi.cot_memref):
+            parent = cfunc.body.find_parent_of(ctree_item.it)
+            if parent and parent.op == idaapi.cot_call and parent.cexpr.x.op == idaapi.cot_helper:
+                cast_helper = parent.to_specific_type.x.helper
+                helpers = ["HIBYTE", "LOBYTE", "BYTE", "HIWORD", "LOWORD"]
+                for h in helpers:
+                    if cast_helper.startswith(h):
+                        return RECAST_HELPER, idaapi.remove_pointer(ctree_item.e.x.type).dstr(), ctree_item.e.m, cast_helper
+
+            rc = get_branch(cfunc,ctree_item)
+            branch_idx = 0
+            off_delta = 0
+            fDoDeref = False
+            if rc:
+                return RecastStructMember.process_branch(rc)
+        return False
+
+    @staticmethod
+    def process_call_branch(nodes,idx = 0):
+        target = nodes[-1]
+        new_type = None
+        fDoDeref = False
+        off_delta = 0
+        while nodes[idx] != target:
+            item = nodes[idx]
+            if item.op == idaapi.cot_cast:
+                if new_type is None:
+                    new_type = item.cexpr.type
+            elif item.op == idaapi.cot_ref:
+                fDoDeref = True
+            elif item.op in (idaapi.cot_add, idaapi.cot_idx):
+                if new_type is None and item.op == idaapi.cot_add:
+                    new_type = item.cexpr.type
+                num = item.cexpr.y.n._value if item.cexpr.x.index == nodes[idx + 1].index else item.to_specific_type.x.n._value
+                off_delta += (num * idaapi.remove_pointer(item.cexpr.type).get_size())
+            idx += 1
+        if new_type:
+            struct_name = target.cexpr.x.type.get_pointed_object().dstr() if target.op == idaapi.cot_memptr else \
+                target.cexpr.x.type.dstr()
+            if fDoDeref or (target.cexpr.type.is_array() and not target.cexpr.type.get_array_element().is_ptr()):
+                new_type = idaapi.remove_pointer(new_type)
+            return RECAST_STRUCTURE, struct_name, target.cexpr.m + off_delta, new_type
+
+    @staticmethod
+    def resolve_references(tp, ref_cnt, ptr_cnt):
+        delta = ref_cnt - ptr_cnt
+        if delta > 0:
+            while delta:
+                tp = idaapi.remove_pointer(tp)
+                delta -= 1
+        elif delta < 0:
+            delta = abs(delta)
+            while delta:
+                tif = idaapi.tinfo_t()
+                tif.create_ptr(tp)
+                tp = tif
+                delta -= 1
+        return tp
+
+    @staticmethod
+    def process_asg_second_branch(nodes):
+        top = nodes[0]
+        target = nodes[-1]
+        next_node = top.x if top.y.index == nodes[1].index else top.y
+        ref_cnt = 0
+        ptr_cnt = 0
+        new_type = None
+        while next_node and next_node.op not in (idaapi.cot_var, idaapi.cot_memptr, idaapi.cot_memref, idaapi.cot_call, idaapi.cot_num):
+            if next_node.op == idaapi.cot_ref:
+                ref_cnt += 1
+            elif next_node.op == idaapi.cot_ptr:
+                ptr_cnt += 1
+            if next_node.x:
+                next_node = next_node.x.cexpr
+            else:
+                break
+        return RecastStructMember.resolve_references(next_node.type, ref_cnt, ptr_cnt)
+
+
+    @staticmethod
+    def process_asg_branch(nodes, idx = 0):
+        second_branch_node = nodes[idx].cexpr.x if nodes[idx+1].index == nodes[idx].cexpr.y.index else nodes[idx].cexpr.y
+        target = nodes[-1]
+        new_type = None
+        fDoDeref = False
+        ref_cnt = 0
+        ptr_cnt = 0
+        off_delta = 0
+        new_type_second = None
+        while second_branch_node and second_branch_node.op not in (idaapi.cot_var,):
+            second_branch_node = second_branch_node.cexpr.x
+        if second_branch_node:
+            new_type_second = second_branch_node.cexpr.type
+        while nodes[idx] != target:
+            item = nodes[idx]
+            if item.op == idaapi.cot_cast:
+                if new_type is None:
+                    new_type = item.cexpr.type
+            elif item.op == idaapi.cot_ref:
+                ref_cnt += 1
+            elif item.op == idaapi.cot_ptr:
+                ptr_cnt += 1
+            elif item.op in (idaapi.cot_add, idaapi.cot_idx):
+                if new_type is None and item.op == idaapi.cot_add:
+                    new_type = item.cexpr.type
+                num = item.cexpr.y.n._value if item.cexpr.x.index == nodes[idx + 1].index else item.to_specific_type.x.n._value
+                off_delta += (num * idaapi.remove_pointer(item.cexpr.type).get_size())
+            idx += 1
+        if new_type or (new_type_second and target.cexpr.type.dstr() != new_type_second.dstr()):
+            struct_name = target.cexpr.x.type.get_pointed_object().dstr() if target.op == idaapi.cot_memptr else \
+                target.cexpr.x.type.dstr()
+            new_type = RecastStructMember.resolve_references(new_type,ref_cnt,ptr_cnt)
+            if target.cexpr.type.is_array() and not target.cexpr.type.get_array_element().is_ptr():
+                new_type = idaapi.remove_pointer(new_type)
+            return RECAST_STRUCTURE, struct_name, target.cexpr.m + off_delta, new_type
+
+    @staticmethod
+    def process_branch(nodes, idx = 0):
+        target = nodes[-1]
+        # types = collections.OrderedDict()
+        opcodes = []
+        new_type = None
+        asg_type = None
+        ref_cnt = 0
+        ptr_cnt = 0
+        off_delta = 0
+        while nodes[idx] != target:
+            item = nodes[idx]
+            opcodes.append(item.op)
+            if item.op == idaapi.cot_cast:
+                # types[item] = item.cexpr.type
+                if new_type is None:
+                    new_type = item.cexpr.type
+            elif item.op == idaapi.cot_asg:
+                # asg_type = item.cexpr.type
+                second_type = RecastStructMember.process_asg_second_branch(nodes[idx:])
+                if target.type != second_type:
+                    # types[item] = item.cexpr.type
+                    asg_type = second_type
+            elif item.op == idaapi.cot_ref:
+                ref_cnt += 1
+            elif item.op == idaapi.cot_ptr:
+                # types[item] = item.cexpr.type
+                if new_type is None:
+                    new_type = item.cexpr.type
+                ptr_cnt += 1
+            elif item.op in (idaapi.cot_add, idaapi.cot_idx):
+                # types[item] = item.cexpr.type
+                if item.x.op == idaapi.cot_num or item.y.op == idaapi.cot_num:
+                    if new_type is None and item.op == idaapi.cot_add:
+                        new_type = item.cexpr.type
+                    num = item.cexpr.y.n._value if item.cexpr.x.index == nodes[idx + 1].index else item.cexpr.x.n._value
+                    off_delta += (num * idaapi.remove_pointer(item.cexpr.type).get_size())
+                else:
+                    return None
+            idx += 1
+        if asg_type and new_type is None:
+            new_type = asg_type
+        if new_type:
+            struct_name = target.cexpr.x.type.get_pointed_object().dstr() if target.op == idaapi.cot_memptr else target.cexpr.x.type.dstr()
+            new_type = RecastStructMember.resolve_references(new_type,ref_cnt,ptr_cnt)
+            if new_type.is_ptr() and idaapi.cot_idx not in opcodes and (is_gap(struct_name,target.cexpr.m + off_delta) or get_struct_member_type(struct_name,target.cexpr.m + off_delta).is_array()):
+                new_type = new_type.get_pointed_object()
+            return RECAST_STRUCTURE, struct_name, target.cexpr.m + off_delta, new_type
+
+    def activate(self, ctx):
+        hx_view = idaapi.get_widget_vdui(ctx.widget)
+        result = self.check(hx_view)
+
+        if result[0] == RECAST_HELPER:
+            struct_name, member_offset, cast_helper = result[1:]
+            sid = idaapi.get_struc_id(struct_name)
+            if sid != idaapi.BADADDR:
+                sptr = idaapi.get_struc(sid)
+                mptr = idaapi.get_member(sptr,member_offset)
+                member_name = idaapi.get_member_name(mptr.id)
+                member_size = idaapi.get_member_size(mptr)
+                if cast_helper.startswith("BYTE") or cast_helper in ("HIBYTE", "LOBYTE"):
+                    idaapi.del_struc_member(sptr, member_offset)
+                    for i in range(member_size):
+                        idc.add_struc_member(sptr.id,member_name if i == 0 else "field_%X"%(member_offset + i), member_offset+i, idaapi.FF_DATA|idaapi.FF_BYTE,idaapi.BADADDR, 1)
+                if cast_helper in ("LOWORD","HIWORD"):
+                    idaapi.del_struc_member(sptr, member_offset)
+                    for i in range(0,member_size,2):
+                        idc.add_struc_member(sptr.id,member_name if i == 0 else "field_%X"%(member_offset + i), member_offset+i, idaapi.FF_DATA|idaapi.FF_WORD,idaapi.BADADDR, 2)
+                hx_view.refresh_view(True)
+
+        elif result[0] == RECAST_STRUCTURE:
+            structure_name, field_offset, new_type = result[1:]
+            sid = idaapi.get_struc_id(structure_name)
+            if sid != idaapi.BADADDR:
+                sptr = idaapi.get_struc(sid)
+                mptr = idaapi.get_member(sptr, field_offset)
+                if mptr is None:
+                    if idaapi.add_struc_member(sptr, "field_%X" % field_offset, field_offset,
+                                               idaapi.FF_DATA | idaapi.FF_BYTE, None, 1) != 0:
+                        print ("Error on add_struc_member!")
+                    mptr = idaapi.get_member(sptr, field_offset)
+                elif mptr.soff != field_offset:
+                    if not idaapi.del_struc_member(sptr, mptr.soff):
+                        print ("Error on del_struc_member!")
+                    if idaapi.add_struc_member(sptr, "field_%X" % field_offset, field_offset,
+                                               idaapi.FF_DATA | idaapi.FF_BYTE, None, 1) != 0:
+                        print ("Error on add_struc_member!")
+                    mptr = idaapi.get_member(sptr, field_offset)
+                else:
+                    tif = idaapi.tinfo_t()
+                    idaapi.get_member_tinfo(tif,mptr)
+                    if tif.is_array():
+                        if not idaapi.del_struc_member(sptr, mptr.soff):
+                            print ("Error on del_struc_member!")
+                        if idaapi.add_struc_member(sptr, "field_%X" % field_offset, field_offset,
+                                                   idaapi.FF_DATA | idaapi.FF_BYTE, None, 1) != 0:
+                            print ("Error on add_struc_member!")
+                        mptr = idaapi.get_member(sptr, field_offset)
+                rc = idaapi.set_member_tinfo(sptr, mptr, field_offset, new_type,
+                                              idaapi.SET_MEMTI_MAY_DESTROY)
+                if rc != 1:
+                    print ("set_member_tinfo2 rc = %d" % rc)
+                hx_view.refresh_view(True)
+
+
+if get_config().get_opt("Recasts", "RecastItemLeft"):
+    actions.action_manager.register(RecastItemLeft())
+if get_config().get_opt("Recasts", "RecastItemRight"):
+    actions.action_manager.register(RecastItemRight())
+if get_config().get_opt("Recasts", "RecastStructMember"):
+    actions.action_manager.register(RecastStructMember())

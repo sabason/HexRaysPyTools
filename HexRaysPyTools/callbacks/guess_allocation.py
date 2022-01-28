@@ -4,6 +4,7 @@ from . import actions
 import HexRaysPyTools.api as api
 import HexRaysPyTools.forms as forms
 import HexRaysPyTools.core.helper as helper
+from ..settings import get_config
 
 
 class _StructAllocChoose(forms.MyChoose):
@@ -61,5 +62,5 @@ class GuessAllocation(actions.HexRaysPopupAction):
         if obj:
             visitor = _GuessAllocationVisitor(hx_view.cfunc, obj)
             visitor.process()
-
-actions.action_manager.register(GuessAllocation())
+if get_config().get_opt("Guess allocation", "GuessAllocation"):
+    actions.action_manager.register(GuessAllocation())

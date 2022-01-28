@@ -4,6 +4,7 @@ from . import actions
 import HexRaysPyTools.core.helper as helper
 import HexRaysPyTools.core.struct_xrefs as struct_xrefs
 import HexRaysPyTools.forms as forms
+from ..settings import get_config
 
 
 class FindFieldXrefs(actions.HexRaysPopupAction):
@@ -47,6 +48,7 @@ class FindFieldXrefs(actions.HexRaysPopupAction):
             return
 
         xref = result[idx]
-        idaapi.open_pseudocode(xref.func_ea + xref.offset, False)
+        idaapi.jumpto(xref.func_ea + xref.offset)
 
-actions.action_manager.register(FindFieldXrefs())
+if get_config().get_opt("Struct xref representation", "FindFieldXrefs"):
+    actions.action_manager.register(FindFieldXrefs())

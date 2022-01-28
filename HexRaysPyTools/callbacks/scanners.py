@@ -5,6 +5,7 @@ import HexRaysPyTools.core.cache as cache
 import HexRaysPyTools.core.helper as helper
 from ..core.variable_scanner import NewShallowSearchVisitor, NewDeepSearchVisitor, DeepReturnVisitor
 from ..core.temporary_structure import TemporaryStructureModel
+from ..settings import get_config
 
 
 class Scanner(actions.HexRaysPopupAction):
@@ -133,8 +134,13 @@ class DeepScanFunctions(actions.Action):
         return idaapi.AST_DISABLE_FOR_WIDGET
 
 
-actions.action_manager.register(ShallowScanVariable())
-actions.action_manager.register(DeepScanVariable())
-actions.action_manager.register(RecognizeShape())
-actions.action_manager.register(DeepScanReturn())
-actions.action_manager.register(DeepScanFunctions())
+if get_config().get_opt("Scanners", "ShallowScanVariable"):
+    actions.action_manager.register(ShallowScanVariable())
+if get_config().get_opt("Scanners", "DeepScanVariable"):
+    actions.action_manager.register(DeepScanVariable())
+if get_config().get_opt("Scanners", "RecognizeShape"):
+    actions.action_manager.register(RecognizeShape())
+if get_config().get_opt("Scanners", "DeepScanReturn"):
+    actions.action_manager.register(DeepScanReturn())
+if get_config().get_opt("Scanners", "DeepScanFunctions"):
+    actions.action_manager.register(DeepScanFunctions())

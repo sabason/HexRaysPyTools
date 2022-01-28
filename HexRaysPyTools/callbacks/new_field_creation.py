@@ -7,6 +7,7 @@ import idc
 from . import actions
 import HexRaysPyTools.core.helper as helper
 import HexRaysPyTools.core.const as const
+from ..settings import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,7 @@ class CreateNewField(actions.HexRaysPopupAction):
             assert tinfo.create_array(tinfo, int(arr_size))
         return tinfo, field_name
 
-actions.action_manager.register(CreateNewField())
+if get_config().get_opt("New field creation", "CreateNewField"):
+    actions.action_manager.register(CreateNewField())
 
 # TODO: All this stuff can be done automatically when we either use ctrl+F5 or regular F5

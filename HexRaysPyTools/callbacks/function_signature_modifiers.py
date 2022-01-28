@@ -1,6 +1,7 @@
 import idaapi
 from . import actions
 import HexRaysPyTools.core.const as const
+from ..settings import get_config
 
 
 class ConvertToUsercall(actions.HexRaysPopupAction):
@@ -85,7 +86,9 @@ class RemoveArgument(actions.HexRaysPopupAction):
         idaapi.apply_tinfo(vu.cfunc.entry_ea, function_tinfo, idaapi.TINFO_DEFINITE)
         vu.refresh_view(True)
 
-
-actions.action_manager.register(ConvertToUsercall())
-actions.action_manager.register(AddRemoveReturn())
-actions.action_manager.register(RemoveArgument())
+if get_config().get_opt("Function signature modifiers", "ConvertToUsercall"):
+    actions.action_manager.register(ConvertToUsercall())
+if get_config().get_opt("Function signature modifiers", "AddRemoveReturn"):
+    actions.action_manager.register(AddRemoveReturn())
+if get_config().get_opt("Function signature modifiers", "RemoveArgument"):
+    actions.action_manager.register(RemoveArgument())

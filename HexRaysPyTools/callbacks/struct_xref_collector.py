@@ -6,6 +6,7 @@ import idaapi
 from . import callbacks
 import HexRaysPyTools.core.struct_xrefs as struct_xrefs
 import HexRaysPyTools.core.helper as helper
+from ..settings import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -103,5 +104,5 @@ class StructXrefCollector(callbacks.HexRaysEventHandler):
         if level_of_maturity == idaapi.CMAT_FINAL:
             StructXrefCollectorVisitor(cfunc, struct_xrefs.XrefStorage()).process()
 
-
-callbacks.hx_callback_manager.register(idaapi.hxe_maturity, StructXrefCollector())
+if get_config().get_opt("Struct xref collector", "StructXrefCollector"):
+    callbacks.hx_callback_manager.register(idaapi.hxe_maturity, StructXrefCollector())

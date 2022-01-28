@@ -577,3 +577,5 @@ class RecursiveObjectUpwardsVisitor(RecursiveObjectVisitor, ObjectUpwardsVisitor
                     if cfunc:
                         self.prepare_new_scan(cfunc, arg_idx, obj, False)
                         super(RecursiveObjectUpwardsVisitor, self)._recursive_process()
+
+

@@ -3,6 +3,7 @@ import idc
 
 from . import actions
 from . import callbacks
+from ..settings import get_config
 
 
 def inverse_if_condition(cif):
@@ -91,7 +92,7 @@ class SwapThenElse(actions.HexRaysPopupAction):
         return idaapi.AST_DISABLE_FOR_WIDGET
 
 
-actions.action_manager.register(SwapThenElse())
+
 
 
 class SwapThenElseVisitor(idaapi.ctree_parentee_t):
@@ -183,4 +184,8 @@ class SilentIfSwapper(callbacks.HexRaysEventHandler):
             visitor.apply_to(cfunc.body, None)
 
 
-callbacks.hx_callback_manager.register(idaapi.hxe_maturity, SilentIfSwapper())
+if get_config().get_opt("Swap if", "SwapThenElse"):
+    actions.action_manager.register(SwapThenElse())
+
+if get_config().get_opt("Swap if", "SilentIfSwapper"):
+    callbacks.hx_callback_manager.register(idaapi.hxe_maturity, SilentIfSwapper())

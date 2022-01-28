@@ -139,7 +139,7 @@ class VirtualMethod(object):
             return
 
         if helper.decompile_function(address):
-            idaapi.open_pseudocode(address, 0)
+            idaapi.jumpto(address, 0)
         else:
             idaapi.jumpto(address)
 

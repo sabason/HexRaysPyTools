@@ -14,3 +14,4 @@ from . import struct_xref_collector
 from . import struct_xref_representation
 from . import swap_if
 from . import virtual_table_creation
+from . import create_struct

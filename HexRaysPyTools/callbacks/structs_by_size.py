@@ -3,6 +3,7 @@ import idaapi
 from . import actions
 import HexRaysPyTools.forms as forms
 import HexRaysPyTools.core.type_library as type_library
+from ..settings import get_config
 
 
 def _choose_structure_by_size(size):
@@ -74,4 +75,5 @@ class GetStructureBySize(actions.HexRaysPopupAction):
             c_function.save_user_numforms()
             hx_view.refresh_view(True)
 
-actions.action_manager.register(GetStructureBySize())
+if get_config().get_opt("Structs by size", "GetStructureBySize"):
+    actions.action_manager.register(GetStructureBySize())

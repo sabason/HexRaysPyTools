@@ -8,7 +8,11 @@ from . import actions
 import HexRaysPyTools.api as api
 import HexRaysPyTools.core.helper as helper
 import HexRaysPyTools.settings as settings
+from ..settings import get_config
 
+fDebug = False
+if fDebug:
+    import pydevd_pycharm
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +104,7 @@ class RenameInside(actions.HexRaysPopupAction):
         # type: (idaapi.cfunc_t, idaapi.ctree_item_t) -> (idaapi.tinfo_t, long, int, str)
 
         if ctree_item.citype != idaapi.VDI_EXPR:
-            return False
+            return
 
         expression = ctree_item.it.to_specific_type
         if expression.op != idaapi.cot_var:
@@ -342,8 +346,66 @@ class PropagateName(actions.HexRaysPopupAction):
             hx_view.refresh_view(True)
 
 
-actions.action_manager.register(RenameOther())
-actions.action_manager.register(RenameInside())
-actions.action_manager.register(RenameOutside())
-actions.action_manager.register(RenameUsingAssert())
-actions.action_manager.register(PropagateName())
+class TakeTypeAsName(actions.HexRaysPopupAction):
+
+    name = "my:TakeTypeAsName"
+    description = "Take Type As Name"
+    hotkey = ""
+    ForPopup = True
+
+    def __init__(self):
+        super().__init__()
+
+    def check(self,hx_view):
+        if fDebug:
+            pydevd_pycharm.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
+        cfunc = hx_view.cfunc
+        ctree_item = hx_view.item
+        if ctree_item.citype == idaapi.VDI_EXPR:
+            if ctree_item.it.op in (idaapi.cot_memptr, idaapi.cot_memref):
+                tp_name = idaapi.remove_pointer(ctree_item.e.type).dstr()
+                struct_name = idaapi.remove_pointer(ctree_item.e.x.type).dstr()
+                if idaapi.get_type_ordinal(idaapi.cvar.idati, struct_name) and idaapi.get_type_ordinal(idaapi.cvar.idati, tp_name):
+                    sid = idaapi.get_struc_id(struct_name)
+                    if sid != idaapi.BADADDR:
+                        sptr = idaapi.get_struc(sid)
+                        mptr = idaapi.get_member(sptr, ctree_item.e.m)
+                        if tp_name not in idaapi.get_member_name(mptr.id):
+                            return True
+            elif ctree_item.it.op == idaapi.cot_var:
+                lv = cfunc.get_lvars()[ctree_item.e.v.idx]
+                lv_type_name = idaapi.remove_pointer(lv.tif).dstr()
+                if idaapi.get_type_ordinal(idaapi.cvar.idati,lv_type_name) and lv_type_name not in lv.name:
+                    return True
+
+    def activate(self, ctx):
+        hx_view = idaapi.get_widget_vdui(ctx.widget)
+        item = hx_view.item.e
+        if item.op in (idaapi.cot_memptr, idaapi.cot_memref):
+            offset = item.m
+            tp_name = "p" if item.type.is_ptr() else "o_"
+            tp_name = tp_name + idaapi.remove_pointer(item.type).dstr()
+            struct_name = idaapi.remove_pointer(item.x.type).dstr()
+            sid = idaapi.get_struc_id(struct_name)
+            sptr = idaapi.get_struc(sid)
+            idaapi.set_member_name(sptr,offset,tp_name)
+            hx_view.refresh_view(True)
+        elif item.op == idaapi.cot_var:
+            lv = hx_view.cfunc.get_lvars()[item.v.idx]
+            tp_name = "p" if lv.tif.is_ptr() else "o_"
+            tp_name = tp_name + idaapi.remove_pointer(lv.tif).dstr()
+            hx_view.rename_lvar(lv,tp_name,True)
+            hx_view.refresh_view(True)
+
+if get_config().get_opt("Renames", "RenameOther"):
+    actions.action_manager.register(RenameOther())
+if get_config().get_opt("Renames", "RenameInside"):
+    actions.action_manager.register(RenameInside())
+if get_config().get_opt("Renames", "RenameOutside"):
+    actions.action_manager.register(RenameOutside())
+if get_config().get_opt("Renames", "RenameUsingAssert"):
+    actions.action_manager.register(RenameUsingAssert())
+if get_config().get_opt("Renames", "PropagateName"):
+    actions.action_manager.register(PropagateName())
+if get_config().get_opt("Renames", "TakeTypeAsName"):
+    actions.action_manager.register(TakeTypeAsName())

@@ -7,6 +7,7 @@ from . import callbacks
 import HexRaysPyTools.core.helper as helper
 import HexRaysPyTools.core.type_library as type_library
 import HexRaysPyTools.forms as forms
+from ..settings import get_config
 
 logger = logging.getLogger(__name__)
 potential_negatives = {}
@@ -381,5 +382,5 @@ class SelectContainingStructure(actions.HexRaysPopupAction):
             )
             hx_view.refresh_view(True)
 
-
-actions.action_manager.register(SelectContainingStructure())
+if get_config().get_opt("Negative offsets", "SelectContainingStructure"):
+    actions.action_manager.register(SelectContainingStructure())

@@ -5,6 +5,7 @@ import HexRaysPyTools.core.cache as cache
 import HexRaysPyTools.core.classes as classes
 from HexRaysPyTools.core.structure_graph import StructureGraph
 from HexRaysPyTools.forms import StructureGraphViewer, ClassViewer, StructureBuilder
+from ..settings import get_config
 
 
 class ShowGraph(actions.Action):
@@ -33,7 +34,7 @@ class ShowGraph(actions.Action):
         return idaapi.AST_DISABLE_FOR_WIDGET
 
 
-actions.action_manager.register(ShowGraph())
+
 
 
 class ShowClasses(actions.Action):
@@ -80,5 +81,11 @@ class ShowStructureBuilder(actions.HexRaysPopupAction):
     def update(self, ctx):
         return idaapi.AST_ENABLE_ALWAYS
 
+show_classes = ShowClasses()
+actions.action_manager.register(show_classes)
+idaapi.attach_action_to_menu('View/Open subviews/Local types', show_classes.name, idaapi.SETMENU_APP)
 
-actions.action_manager.register(ShowStructureBuilder())
+if get_config().get_opt("Main plugins UI forms", "ShowGraph"):
+    actions.action_manager.register(ShowGraph())
+if get_config().get_opt("Main plugins UI forms", "ShowGraph"):
+    actions.action_manager.register(ShowGraph())

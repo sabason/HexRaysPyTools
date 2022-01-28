@@ -2,6 +2,9 @@ import idaapi
 
 from . import callbacks
 import HexRaysPyTools.core.helper as helper
+from ..core import const
+from ..netnode import Netnode
+from ..settings import get_config
 
 
 class MemberDoubleClick(callbacks.HexRaysEventHandler):
@@ -37,7 +40,41 @@ class MemberDoubleClick(callbacks.HexRaysEventHandler):
             func_name = helper.get_member_name(vtable_tinfo, method_offset)
             func_ea = helper.choose_virtual_func_address(func_name, class_tinfo, vtable_offset)
             if func_ea:
-                idaapi.open_pseudocode(func_ea, 0)
+                idaapi.jumpto(func_ea, 0)
                 return 1
+            n = Netnode("$ VTables")
+            vt_name = vtable_tinfo.get_type_name()
+            struct_id = idaapi.get_struc_id(vt_name)
+            if vt_name in n:
+                l = n[vt_name]
+                # print l
+                info = idaapi.get_inf_structure()
+                if not const.EA64:
+                    ptr_size = 4
+                else:
+                    ptr_size = 8
+                # else idc.__EA64__:
+                #     ptr_size = 8
+                # else:
+                #     ptr_size = 2
+                if method_offset % ptr_size == 0 and method_offset // ptr_size < len(l):
+                    idaapi.jumpto(l[method_offset // ptr_size] + idaapi.get_imagebase())
+                    return 1
+            elif struct_id in n:
+                l = n[struct_id]
+                # print l
+                info = idaapi.get_inf_structure()
+                if not const.EA64:
+                    ptr_size = 4
+                else:
+                    ptr_size = 8
+                # else idc.__EA64__:
+                #     ptr_size = 8
+                # else:
+                #     ptr_size = 2
+                if method_offset % ptr_size == 0 and method_offset // ptr_size < len(l):
+                    idaapi.jumpto(l[method_offset // ptr_size] + idaapi.get_imagebase())
+                    return 1
 
-callbacks.hx_callback_manager.register(idaapi.hxe_double_click, MemberDoubleClick())
+if get_config().get_opt("Member double click", "MemberDoubleClick"):
+    callbacks.hx_callback_manager.register(idaapi.hxe_double_click, MemberDoubleClick())

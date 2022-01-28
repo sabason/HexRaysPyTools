@@ -8,6 +8,13 @@ import HexRaysPyTools.settings as settings
 from HexRaysPyTools.callbacks import hx_callback_manager, action_manager
 from HexRaysPyTools.core.struct_xrefs import XrefStorage
 from HexRaysPyTools.core.temporary_structure import TemporaryStructureModel
+from HexRaysPyTools.forms import StructureBuilder
+from HexRaysPyTools.core.rename_hooks import rename_hook
+
+fDebug = False
+if fDebug:
+    import pydevd_pycharm
+
 
 
 class MyPlugin(idaapi.plugin_t):
@@ -27,18 +34,26 @@ class MyPlugin(idaapi.plugin_t):
         hx_callback_manager.initialize()
         cache.temporary_structure = TemporaryStructureModel()
         const.init()
+        if fDebug == True:
+            pydevd_pycharm.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=True)
         XrefStorage().open()
+        rename_hook.hook()
         return idaapi.PLUGIN_KEEP
 
     @staticmethod
     def run(*args):
-        pass
+        tform = idaapi.find_widget("Structure Builder")
+        if tform:
+            idaapi.activate_widget(tform, True)
+        else:
+            StructureBuilder(cache.temporary_structure).Show()
 
     @staticmethod
     def term():
         action_manager.finalize()
         hx_callback_manager.finalize()
         XrefStorage().close()
+        rename_hook.unhook()
         idaapi.term_hexrays_plugin()
 
 
