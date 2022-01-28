@@ -18,6 +18,16 @@ def get_config():
 from HexRaysPyTools import forms
 
 CONFIG_FILE_PATH = os.path.join(idc.idadir(), 'cfg', 'HexRaysPyTools.cfg')
+try:
+    f = open(CONFIG_FILE_PATH, "ab")
+    f.close()
+except:
+    print("Cannot open config file.")
+    CONFIG_FILE_PATH = os.path.join(os.environ["APPDATA"], "IDA Pro", "cfg", "HexRaysPyTools.cfg")
+    if not os.path.exists(os.path.join(os.environ["APPDATA"], "IDA Pro", "cfg")):
+        os.makedirs(os.path.join(os.environ["APPDATA"], "IDA Pro", "cfg"))
+    f = open(CONFIG_FILE_PATH, "ab")
+    f.close()
 
 DEBUG_MESSAGE_LEVEL = logging.INFO
 # Whether propagate names (Propagate name feature) through all names or only defaults like v11, a3, this, field_4
