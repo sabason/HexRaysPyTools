@@ -60,6 +60,8 @@ def demangled_name_to_c_str(name):
             name = name.replace("operator||", "operator_LOR_")
         elif name[idx] == "!":
             name = name.replace("operator!", "operator_LNOT_")
+        elif name[idx] == "~":
+            name = name.replace("operator~", "operator_NOT_")
         elif name[idx] == "&":
             name = name.replace("operator&", "operator_AND_")
         elif name[idx] == "|":
