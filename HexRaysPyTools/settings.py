@@ -69,6 +69,7 @@ def load_settings():
     global DEBUG_MESSAGE_LEVEL, PROPAGATE_THROUGH_ALL_NAMES, STORE_XREFS, SCAN_ANY_TYPE, hex_pytools_config
 
     config = configparser.ConfigParser()
+    config.optionxform = str
     if os.path.isfile(CONFIG_FILE_PATH):
         config.read(CONFIG_FILE_PATH)
 
