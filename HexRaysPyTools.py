@@ -35,7 +35,7 @@ class MyPlugin(idaapi.plugin_t):
         cache.temporary_structure = TemporaryStructureModel()
         const.init()
         if fDebug == True:
-            pydevd_pycharm.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=True)
+            pydevd_pycharm.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
         XrefStorage().open()
         rename_hook.hook()
         return idaapi.PLUGIN_KEEP

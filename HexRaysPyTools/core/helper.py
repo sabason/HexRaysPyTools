@@ -1,8 +1,12 @@
 import collections
 import logging
 
+import ida_bytes
+import ida_funcs
+import ida_struct
 import idaapi
 import idc
+import idautils
 
 import HexRaysPyTools.core.cache as cache
 import HexRaysPyTools.core.const as const
@@ -12,6 +16,18 @@ import HexRaysPyTools.forms as forms
 
 logger = logging.getLogger(__name__)
 
+
+def GetXrefCnt(ea):
+    i = 0
+    for xref in idautils.XrefsTo(ea, 0):
+        i += 1
+    return i
+
+def convert_name(vt_name):
+    if vt_name.startswith("0x"):
+        vt_sid = int(vt_name.split(' ')[0], 16)
+        return ida_struct.get_struc_name(vt_sid)
+    return vt_name
 
 def is_imported_ea(ea):
     if idc.get_segm_name(ea) == ".plt":
@@ -413,3 +429,10 @@ def my_cexpr_t(*args, **kwargs):
         if 'z' in kwargs:
             cexpr._set_z(kwargs['z'])
     return cexpr
+
+def get_func_ea(name):
+    for ea in idautils.Functions():
+        n = ida_funcs.get_func_name(ea)
+        if n == name:
+            return ea
+    return None

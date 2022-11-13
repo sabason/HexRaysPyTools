@@ -2,6 +2,7 @@ import os
 import logging
 
 import ida_diskio
+import ida_kernwin
 import idc
 import configparser
 
@@ -13,9 +14,69 @@ def get_config():
         hex_pytools_config = Config()
     return hex_pytools_config
 
+class ConfigFeaturesChooser(ida_kernwin.Choose):
 
+    def __init__(self, config, parent):
 
-from HexRaysPyTools import forms
+        self.config = config
+        self.parent = parent
+
+        super(ConfigFeaturesChooser, self).__init__("Features", [["Feature section", 40], ["Feature name", 40], ["Status", 10]], embedded=True)
+
+        self.n = 0
+        self.items = []
+
+        self.make_items()
+
+    def make_items(self):
+        for section in self.config.FeaturesListDef:
+            for opt in self.config.FeaturesListDef[section]:
+                self.items.append([section, opt, "Enabled" if self.config.get_opt(section, opt) else "Disabled"])
+
+    def OnGetLine(self, n):
+        return self.items[n]
+
+    def OnGetSize(self):
+        n = len(self.items)
+        return n
+
+    def OnSelectLine(self, n):
+        section, opt, status = self.items[n]
+        if status == "Disabled":
+            self.items[n][-1] = "Enabled"
+        else:
+            self.items[n][-1] = "Disabled"
+        self.parent.RefreshField(self.parent.ceChooser)
+
+    def GetItems(self):
+        ret = {}
+        for section, opt, status in self.items:
+            if section not in ret:
+                ret[section] = {}
+            ret[section][opt] = True if status == "Enabled" else False
+        return ret
+
+class ConfigFeatures(ida_kernwin.Form):
+    form_template = """HexRaysPyTools features config
+Double click for switch feature.
+Need restart Ida Pro for settings applying!
+
+<Features: {ceChooser}>
+"""
+
+    def __init__(self, config):
+        self.config = config
+        self.eChooser = ConfigFeaturesChooser(self.config, self)
+
+        super(ConfigFeatures, self).__init__(self.form_template, {"ceChooser": ida_kernwin.Form.EmbeddedChooserControl(self.eChooser)})
+
+    def Do(self):
+        self.Compile()
+        ok = self.Execute()
+        print(ok)
+        if ok == 1:
+            self.config.update(self.eChooser.GetItems())
+
 
 CONFIG_FILE_PATH = os.path.join(idc.idadir(), 'cfg', 'HexRaysPyTools.cfg')
 try:
@@ -87,7 +148,7 @@ class Config(object):
                         "Main plugins UI forms":{"ShowGraph":True, "ShowStructureBuilder":True},
                         "Function signature modifiers":{"ConvertToUsercall":True, "AddRemoveReturn":True,"RemoveArgument":True},
                         "Guess allocation":{"GuessAllocation":True},
-                        "Member double click":{"MemberDoubleClick":True},
+                        "Member double click":{"MemberDoubleClick":True, "JumpByFieldName":True},
                         "Negative offsets":{"SelectContainingStructure":True},
                         "New field creation":{"CreateNewField":True},
                         "Recasts":{"RecastItemLeft":True,"RecastItemRight":True,"RecastStructMember":True},
@@ -97,7 +158,8 @@ class Config(object):
                         "Struct xref representation":{"FindFieldXrefs":True},
                         "Structs by size":{"GetStructureBySize":True},
                         "Swap if":{"SilentIfSwapper":True, "SwapThenElse":True},
-                        "Virtual table creation":{"CreateVtable":True,"DecompileCreateVtable":True}
+                        "Virtual table creation":{"CreateVtable":True,"DecompileCreateVtable":True,"DisassembleCreateVtable":True},
+                        "Virtual tables netnode":{"BoundVtable":False},
                        }
 
     def __init__(self):
@@ -156,6 +218,6 @@ class Config(object):
         f.close()
 
     def modify(self):
-        f = forms.ConfigFeatures(self)
+        f = ConfigFeatures(self)
         f.Do()
         f.Free()

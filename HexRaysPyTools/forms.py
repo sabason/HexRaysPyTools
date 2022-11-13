@@ -3,73 +3,7 @@ from PyQt5 import QtCore, QtWidgets
 
 import idaapi
 from HexRaysPyTools.settings import get_config
-
-class ConfigFeaturesChooser(ida_kernwin.Choose):
-
-    def __init__(self, config, parent):
-
-        self.config = config
-        self.parent = parent
-
-        super(ConfigFeaturesChooser, self).__init__("Features", [["Feature section", 40], ["Feature name", 40], ["Status", 10]], embedded=True)
-
-        self.n = 0
-        self.items = []
-
-        self.make_items()
-
-    def make_items(self):
-        for section in self.config.FeaturesListDef:
-            for opt in self.config.FeaturesListDef[section]:
-                self.items.append([section, opt, "Enabled" if self.config.get_opt(section, opt) else "Disabled"])
-
-    def OnGetLine(self, n):
-        return self.items[n]
-
-    def OnGetSize(self):
-        n = len(self.items)
-        return n
-
-    def OnSelectLine(self, n):
-        section, opt, status = self.items[n]
-        if status == "Disabled":
-            self.items[n][-1] = "Enabled"
-        else:
-            self.items[n][-1] = "Disabled"
-        self.parent.RefreshField(self.parent.ceChooser)
-
-    def GetItems(self):
-        ret = {}
-        for section, opt, status in self.items:
-            if section not in ret:
-                ret[section] = {}
-            ret[section][opt] = True if status == "Enabled" else False
-        return ret
-
-
-class ConfigFeatures(idaapi.Form):
-    form_template = """HexRaysPyTools features config
-Double click for switch feature.
-Need restart Ida Pro for settings applying!
-
-<Features: {ceChooser}>
-"""
-
-    def __init__(self, config):
-        self.config = config
-        self.eChooser = ConfigFeaturesChooser(self.config, self)
-
-        super(ConfigFeatures, self).__init__(self.form_template, {"ceChooser": ida_kernwin.Form.EmbeddedChooserControl(self.eChooser)})
-
-
-    def Do(self):
-        self.Compile()
-        ok = self.Execute()
-        print(ok)
-        if ok == 1:
-            self.config.update(self.eChooser.GetItems())
-
-            
+import HexRaysPyTools.core.vtables_netnode as vtables_netnode
 
 
 
@@ -121,6 +55,7 @@ class StructureBuilder(idaapi.PluginForm):
         btn_clear = QtWidgets.QPushButton("Clear")  # Clear button doesn't have shortcut because it can fuck up all work
         btn_recognize = QtWidgets.QPushButton("Recognize Shape")
         btn_config = QtWidgets.QPushButton("Configure features")
+        btn_vt_node_edit = QtWidgets.QPushButton("Edit vtables")
         btn_recognize.setStyleSheet("QPushButton {width: 100px; height: 20px;}")
         btn_config.setStyleSheet("QPushButton {width: 100px; height: 20px;}")
 
@@ -157,7 +92,8 @@ class StructureBuilder(idaapi.PluginForm):
         grid_box.addItem(QtWidgets.QSpacerItem(20, 20, QtWidgets.QSizePolicy.Expanding), 1, 5)
         grid_box.addWidget(btn_recognize, 0, 6)
         grid_box.addWidget(btn_clear, 1, 6)
-        grid_box.addWidget(btn_config, 0, 5, 1, 6)
+        grid_box.addWidget(btn_config, 0, 7)
+        grid_box.addWidget(btn_vt_node_edit, 1, 7)
 
         vertical_box = QtWidgets.QVBoxLayout()
         vertical_box.addWidget(struct_view)
@@ -166,6 +102,7 @@ class StructureBuilder(idaapi.PluginForm):
 
         btn_finalize.clicked.connect(lambda: self.structure_model.finalize())
         btn_config.clicked.connect(lambda: get_config().modify())
+        btn_vt_node_edit.clicked.connect(lambda: vtables_netnode.edit_vtables_netnode())
         btn_disable.clicked.connect(lambda: self.structure_model.disable_rows(struct_view.selectedIndexes()))
         btn_enable.clicked.connect(lambda: self.structure_model.enable_rows(struct_view.selectedIndexes()))
         btn_origin.clicked.connect(lambda: self.structure_model.set_origin(struct_view.selectedIndexes()))

@@ -41,11 +41,11 @@ class Action(idaapi.action_handler_t):
         return "HexRaysPyTools:" + type(self).__name__
 
     def activate(self, ctx):
-        # type: (idaapi.action_activation_ctx_t) -> None
+        # type: (idaapi.action_ctx_base_t) -> None
         raise NotImplementedError
 
     def update(self, ctx):
-        # type: (idaapi.action_activation_ctx_t) -> None
+        # type: (idaapi.action_ctx_base_t) -> None
         raise NotImplementedError
 
 
@@ -62,7 +62,7 @@ class HexRaysPopupAction(Action):
         super(HexRaysPopupAction, self).__init__()
 
     def activate(self, ctx):
-        # type: (idaapi.action_activation_ctx_t) -> None
+        # type: (idaapi.action_ctx_base_t) -> None
         raise NotImplementedError
 
     def check(self, hx_view):

@@ -1,6 +1,10 @@
 from collections import defaultdict
 import idaapi
+import ida_hexrays
 
+fDebug = False
+if fDebug:
+    import pydevd_pycharm
 
 class HexRaysCallbackManager(object):
     def __init__(self):
@@ -16,8 +20,13 @@ class HexRaysCallbackManager(object):
         self.__hexrays_event_handlers[event].append(handler)
 
     def __handle(self, event, *args):
+        if fDebug == True:
+            pydevd_pycharm.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
+        rets = []
         for handler in self.__hexrays_event_handlers[event]:
-            handler.handle(event, *args)
+            rets.append(handler.handle(event, *args))
+        if len(rets) > 0 and 0 not in rets and None not in rets:
+            return 1
         # IDA expects zero
         return 0
 
