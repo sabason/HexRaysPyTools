@@ -51,7 +51,7 @@ class VtableMembersUI(idaapi.Form):
             self.SetFocusedField(self.EChooser)
 
     def add_new(self, code=0):
-        self.EChooser.OnInsertLine()
+        self.EChooser.OnInsertLine(None)
 
 
 class VtableMembersChooser(idaapi.Choose):
@@ -75,8 +75,6 @@ class VtableMembersChooser(idaapi.Choose):
         self.populate_items()
 
     def populate_items(self):
-        import pydevd
-        # pydevd.settrace('localhost', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
         self.items = []
         n = Netnode(vt_node_name)
 
@@ -162,11 +160,11 @@ class VtableMembersChooser(idaapi.Choose):
             self.items[n] = new_item
             self.obj.RefreshField(self.obj.controls['cEChooser'])
 
-    def OnInsertLine(self):
+    def OnInsertLine(self, n):
         print("insert line")
         sptr = ida_struct.get_struc(ida_struct.get_struc_id(self.vt_name))
-        n = Netnode(vt_node_name)
-        l = n[self.vt_name]
+        netnode = Netnode(vt_node_name)
+        l = netnode[self.vt_name]
         if ida_struct.get_struc_size(sptr) // self.field_size > len(l):
             func_addr = ida_kernwin.ask_addr(0, "Enter function addr")
             if func_addr is not None:
@@ -174,7 +172,7 @@ class VtableMembersChooser(idaapi.Choose):
                     l.append(func_addr - ida_nalt.get_imagebase())
                 else:
                     l.append(None)
-                n[self.vt_name] = l
+                netnode[self.vt_name] = l
                 self.obj.RefreshField(self.obj.controls['cEChooser'])
         else:
             ida_kernwin.warning("All fields of structrure %s has descriptions" % self.vt_name)
@@ -205,8 +203,6 @@ class VtableChooser(idaapi.Choose):
         self.populate_items()
 
     def populate_items(self):
-        import pydevd
-        # pydevd.settrace('localhost', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
         self.items = []
         n = Netnode(vt_node_name)
         for name in n.keys():
