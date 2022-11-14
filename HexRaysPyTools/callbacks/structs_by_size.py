@@ -22,7 +22,7 @@ def _choose_structure_by_size(size):
         type_chooser = forms.MyChoose(
             matched_types,
             "Select Type",
-            [["Ordinal", 5 | idaapi.CHCOL_HEX], ["Type Name", 25], ["Declaration", 50]],
+            [["Ordinal", 5 | idaapi.Choose.CHCOL_HEX], ["Type Name", 25], ["Declaration", 50]],
             165
         )
         selected_type = type_chooser.Show(True)
@@ -58,7 +58,7 @@ class GetStructureBySize(actions.HexRaysPopupAction):
             operand_number = number_format_old.opnum
             number_format_new.opnum = operand_number
             number_format_new.props = number_format_old.props
-            number_format_new.type_name = idaapi.create_numbered_type_name(ordinal)
+            number_format_new.type_name = idaapi.get_numbered_type_name(idaapi.cvar.idati, ordinal)
 
             c_function = hx_view.cfunc
             number_formats = c_function.numforms    # type: idaapi.user_numforms_t
