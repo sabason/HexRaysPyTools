@@ -1,5 +1,5 @@
 import re
-import logging
+from HexRaysPyTools.log import Log
 import idaapi
 
 from . import actions
@@ -9,7 +9,7 @@ import HexRaysPyTools.core.type_library as type_library
 import HexRaysPyTools.forms as forms
 from ..settings import get_config
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 potential_negatives = {}
 
 

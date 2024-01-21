@@ -1,9 +1,9 @@
-import logging
+from HexRaysPyTools.log import Log
 
 import idaapi
 import idc
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 
 class LocalType:

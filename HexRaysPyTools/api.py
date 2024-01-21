@@ -1,10 +1,10 @@
-import logging
+from HexRaysPyTools.log import Log
 import idaapi
 import idc
 from .core.helper import to_hex
 from .core import helper
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 
 SETTING_START_FROM_CURRENT_EXPR = True

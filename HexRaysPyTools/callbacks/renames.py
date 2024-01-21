@@ -1,5 +1,5 @@
 import re
-import logging
+from HexRaysPyTools.log import Log
 
 import idaapi
 import idc
@@ -14,7 +14,7 @@ fDebug = False
 if fDebug:
     import pydevd_pycharm
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 
 def _should_be_renamed(old_name, new_name):
@@ -188,7 +188,7 @@ class _RenameUsingAssertVisitor(idaapi.ctree_parentee_t):
         if len(self.__possible_names) == 1:
             # Only one potential name was found, rename function using it
             new_name = self.__possible_names.pop()
-            logging.info("Renaming function at {} to `{}`".format(helper.to_hex(self.__cfunc.entry_ea), new_name))
+            logger.info("Renaming function at {} to `{}`".format(helper.to_hex(self.__cfunc.entry_ea), new_name))
             idc.set_name(self.__cfunc.entry_ea, new_name)
         elif len(self.__possible_names) > 1:
             logger.error("Function at {} has more than one candidate for renaming: {}".format(
@@ -200,7 +200,7 @@ class _RenameUsingAssertVisitor(idaapi.ctree_parentee_t):
             # convert bytes to str (python 3)
             new_name = new_name.decode('ascii')
         if not idaapi.is_valid_typename(new_name):
-            logger.warn("Argument has a weird name `{}` at {}".format(
+            logger.warning("Argument has a weird name `{}` at {}".format(
                 new_name, helper.to_hex(helper.find_asm_address(arg_expr, self.parents))))
             return
 

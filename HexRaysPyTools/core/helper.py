@@ -1,5 +1,5 @@
 import collections
-import logging
+from HexRaysPyTools.log import Log
 
 import ida_bytes
 import ida_funcs
@@ -14,7 +14,7 @@ import HexRaysPyTools.settings as settings
 import HexRaysPyTools.forms as forms
 
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 
 def GetXrefCnt(ea):

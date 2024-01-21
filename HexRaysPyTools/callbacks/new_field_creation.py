@@ -1,4 +1,4 @@
-import logging
+from HexRaysPyTools.log import Log
 import re
 
 import idaapi
@@ -9,7 +9,7 @@ import HexRaysPyTools.core.helper as helper
 import HexRaysPyTools.core.const as const
 from ..settings import get_config
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 
 def _is_gap_field(cexpr):

@@ -1,6 +1,6 @@
 import zlib
 import json
-import logging
+from HexRaysPyTools.log import Log
 
 import idaapi
 
@@ -10,7 +10,7 @@ INT_KEYS_TAG = 'M'
 STR_KEYS_TAG = 'N'
 STR_TO_INT_MAP_TAG = 'O'
 INT_TO_INT_MAP_TAG = 'P'
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 # get the IDA version number
 ida_major, ida_minor = list(map(int, idaapi.get_kernel_version().split(".")))

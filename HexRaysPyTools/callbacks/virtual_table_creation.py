@@ -148,7 +148,7 @@ def create_vtable(addr):
     # bNameMethods = AskYN(0,"Would you like to assign auto names to the virtual methods (%s_virtXX)?"%name)
     i = 0
     n = Netnode("$ VTables")
-    n[name + "_vtbl"] = []
+    # n[name + "_vtbl"] = []
     n[struct_id] = []
     info = idaapi.get_inf_structure()
     if not Const.EA64:
@@ -210,9 +210,9 @@ def create_vtable(addr):
                 ida_kernwin.warning("Unknown error! Err = %d"%e)
                 return
         idc.set_member_cmt(struct_id, i * ptr_size, "-> %08X, args: 0x%X" % (c, idc.get_func_attr(c,idc.FUNCATTR_ARGSIZE)), 1)
-        l = n[name + "_vtbl"]
-        l.append((c - idaapi.get_imagebase()) if c else idaapi.BADADDR)
-        n[name + "_vtbl"] = l
+        # l = n[name + "_vtbl"]
+        # l.append((c - idaapi.get_imagebase()) if c else idaapi.BADADDR)
+        # n[name + "_vtbl"] = l
         l = n[struct_id]
         l.append((c - idaapi.get_imagebase()) if c else idaapi.BADADDR)
         n[struct_id] = l

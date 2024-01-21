@@ -1,4 +1,4 @@
-import logging
+from HexRaysPyTools.log import Log
 import idaapi
 import idc
 from . import const
@@ -6,7 +6,7 @@ from . import helper
 from . import temporary_structure
 import HexRaysPyTools.api as api
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 # If disabled then recursion will be triggered only for variable passed as first argument to function
 SETTING_SCAN_ALL_ARGUMENTS = True

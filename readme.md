@@ -173,15 +173,15 @@ If a variable is a structure pointer and there's an access to outside of the bou
 
 Every time you have two sides in an expression, where each side may be a local or global variable, argument or return value of the function signature, it is possible to right-click or press the hotkey to give both sides of the expression similar types. Below, there is the table of possible conversions:
 
-| Original | Shift+L | Shift+R
-| --- | --- | --- |
-| var = (TYPE) expr | var type -> TYPE  |  |
-| exp = (TYPE) var |  | var type -> TYPE |
-| function(..., (TYPE) var, ...) | functions' argument -> TYPE | var type -> TYPE |
-| (TYPE) function(...) | | functions' return type -> TYPE |
-| return (TYPE) var | functions' return type -> TYPE | var type -> TYPE |
-| struct.field = (TYPE) var | type(field) -> TYPE | |
-| pstruct->field = (TYPE) var | type(field) -> TYPE | |
+| Original                       | Shift+L                        | Shift+R                        |
+|--------------------------------|--------------------------------|--------------------------------|
+| var = (TYPE) expr              | var type -> TYPE               |                                |
+| exp = (TYPE) var               |                                | var type -> TYPE               |
+| function(..., (TYPE) var, ...) | functions' argument -> TYPE    | var type -> TYPE               |
+| (TYPE) function(...)           |                                | functions' return type -> TYPE |
+| return (TYPE) var              | functions' return type -> TYPE | var type -> TYPE               |
+| struct.field = (TYPE) var      | type(field) -> TYPE            |                                |
+| pstruct->field = (TYPE) var    | type(field) -> TYPE            |                                |
 
 When you have an expression like `function(..., some_good_name, ...)`, you can rename function parameter.
 

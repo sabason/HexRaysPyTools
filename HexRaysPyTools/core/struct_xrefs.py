@@ -1,12 +1,12 @@
 from collections import namedtuple, defaultdict
 import json
-import logging
+from HexRaysPyTools.log import Log
 
 import idaapi
 from . import helper
 import HexRaysPyTools.settings as settings
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 XrefInfo = namedtuple('XrefInfo', ['func_ea', 'offset', 'line', 'type'])
 

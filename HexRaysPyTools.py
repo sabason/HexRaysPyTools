@@ -1,5 +1,5 @@
-import logging
-
+from HexRaysPyTools.log import Log, LogLevel
+logger = Log.get_logger()
 import idaapi
 
 import HexRaysPyTools.core.cache as cache
@@ -27,7 +27,7 @@ class MyPlugin(idaapi.plugin_t):
     @staticmethod
     def init():
         if not idaapi.init_hexrays_plugin():
-            logging.error("Failed to initialize Hex-Rays SDK")
+            logger.error("Failed to initialize Hex-Rays SDK")
             return idaapi.PLUGIN_SKIP
 
         action_manager.initialize()
@@ -49,7 +49,7 @@ class MyPlugin(idaapi.plugin_t):
             StructureBuilder(cache.temporary_structure).Show()
 
     @staticmethod
-    def term():
+    def term(*args):
         action_manager.finalize()
         hx_callback_manager.finalize()
         XrefStorage().close()
@@ -59,7 +59,9 @@ class MyPlugin(idaapi.plugin_t):
 
 def PLUGIN_ENTRY():
     settings.load_settings()
-    logging.basicConfig(format='[%(levelname)s] %(message)s\t(%(module)s:%(funcName)s)')
-    logging.root.setLevel(settings.DEBUG_MESSAGE_LEVEL)
+    Log.set_root_log_level(LogLevel(settings.DEBUG_MESSAGE_LEVEL))
+    Log.set_stream_log_level(LogLevel(settings.DEBUG_MESSAGE_LEVEL))
+    # logging.basicConfig(format='[%(levelname)s] %(message)s\t(%(module)s:%(funcName)s)')
+    # logging.root.setLevel(settings.DEBUG_MESSAGE_LEVEL)
     idaapi.notify_when(idaapi.NW_OPENIDB, cache.initialize_cache)
     return MyPlugin()

@@ -1,4 +1,4 @@
-import logging
+from HexRaysPyTools.log import Log
 import time
 
 import idaapi
@@ -8,7 +8,7 @@ import HexRaysPyTools.core.struct_xrefs as struct_xrefs
 import HexRaysPyTools.core.helper as helper
 from ..settings import get_config
 
-logger = logging.getLogger(__name__)
+logger = Log.get_logger()
 
 
 class StructXrefCollectorVisitor(idaapi.ctree_parentee_t):

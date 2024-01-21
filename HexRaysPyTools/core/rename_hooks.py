@@ -5,7 +5,7 @@ name_regex = re.compile(r"^a[\d]*[a]?$")
 
 renamed_fields = {}
 
-class My_IDB_Hooks(idaapi.IDB_Hooks):
+class VarRenameHooks(idaapi.IDB_Hooks):
 
     def renaming_struc_member(self, sptr, mptr, newname):
         if sptr.is_frame():
@@ -40,4 +40,4 @@ class My_IDB_Hooks(idaapi.IDB_Hooks):
                                 del renamed_fields[func_off]
         return 0
 
-rename_hook = My_IDB_Hooks()
+rename_hook = VarRenameHooks()
