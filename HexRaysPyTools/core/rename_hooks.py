@@ -1,4 +1,6 @@
 import idaapi, re
+from HexRaysPyTools.log import Log
+logger = Log.get_logger()
 
 name_regex = re.compile(r"^a[\d]*[a]?$")
 
@@ -14,10 +16,10 @@ class VarRenameHooks(idaapi.IDB_Hooks):
                 pfn = idaapi.get_func(func_off)
                 if not idaapi.is_funcarg_off(pfn,mptr.soff):
                     global renamed_fields
-                    print ("My_IDB_Hooks: Frame of function at 0x%08X" % func_off)
-                    print ("My_IDB_Hooks: Frame member new name is %s" % newname)
+                    logger.debug("My_IDB_Hooks: Frame of function at 0x%08X" % func_off)
+                    logger.debug("My_IDB_Hooks: Frame member new name is %s" % newname)
                     old_name = idaapi.get_member_name(mptr.id)
-                    print ("My_IDB_Hooks: Frame member old name is %s\n" % old_name)
+                    logger.debug("My_IDB_Hooks: Frame member old name is %s\n" % old_name)
                     if func_off not in renamed_fields:
                         renamed_fields[func_off] = {}
                     renamed_fields[func_off][mptr.soff] = old_name
