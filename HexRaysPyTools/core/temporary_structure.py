@@ -257,6 +257,7 @@ class VirtualFunction:
         udt_member.offset = self.offset
         udt_member.name = self.name
         udt_member.size = const.EA_SIZE
+        udt_member.cmt = "0x{:08X}".format(self.address)
         return udt_member
 
     def get_information(self):
