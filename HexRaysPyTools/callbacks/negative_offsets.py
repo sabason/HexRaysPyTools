@@ -26,7 +26,7 @@ def _parse_magic_comment(lvar):
             structure_name, offset = m.group(1).split('+')
             offset = int(offset)
             parent_tinfo = idaapi.tinfo_t()
-            if parent_tinfo.get_named_type(idaapi.cvar.idati, structure_name) and parent_tinfo.get_size() > offset:
+            if parent_tinfo.get_named_type(idaapi.get_idati(), structure_name) and parent_tinfo.get_size() > offset:
                 member_name = dict(find_deep_members(parent_tinfo, lvar.type().get_pointed_object())).get(offset, None)
                 if member_name:
                     return NegativeLocalInfo(lvar.type().get_pointed_object(), parent_tinfo, offset, member_name)
@@ -111,7 +111,7 @@ class NegativeLocalCandidate:
         if not target_tinfo.get_named_type(type_library, self.tinfo.dstr()):
             print("[Warning] Such type doesn't exist in '{0}' library".format(type_library.name))
             return result
-        for ordinal in range(1, idaapi.get_ordinal_qty(type_library)):
+        for ordinal in range(1, idaapi.get_ordinal_count(type_library)):
             parent_tinfo.create_typedef(type_library, ordinal)
             if parent_tinfo.get_size() >= min_struct_size:
                 for offset, name in find_deep_members(parent_tinfo, target_tinfo):
@@ -176,7 +176,7 @@ class ReplaceVisitor(idaapi.ctree_parentee_t):
         new_cexpr_call.a.push_back(arg_field)
         new_cexpr_call.thisown = False
 
-        parent = reversed(self.parents).next().cexpr
+        parent = next(reversed(self.parents)).cexpr
 
         diff = negative_lvar.offset + offset
         if diff:
@@ -221,7 +221,7 @@ class SearchVisitor(idaapi.ctree_parentee_t):
                         parent_name = expression.a[1].helper
                         member_name = expression.a[2].helper
                         parent_tinfo = idaapi.tinfo_t()
-                        if not parent_tinfo.get_named_type(idaapi.cvar.idati, parent_name):
+                        if not parent_tinfo.get_named_type(idaapi.get_idati(), parent_name):
                             return 0
                         udt_data = idaapi.udt_type_data_t()
                         parent_tinfo.get_udt_details(udt_data)

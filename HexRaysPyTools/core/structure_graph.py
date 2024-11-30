@@ -41,7 +41,7 @@ class LocalType:
 class StructureGraph:
     # TODO:Enum types display
     def __init__(self, ordinal_list=None):
-        self.ordinal_list = ordinal_list if ordinal_list else range(1, idc.get_ordinal_qty())
+        self.ordinal_list = ordinal_list if ordinal_list else range(1, idaapi.get_ordinal_count())
         self.local_types = {}
         self.edges = []
         self.final_edges = []
@@ -100,12 +100,12 @@ class StructureGraph:
         if local_typestring:
             p_type, fields = local_typestring
             local_tinfo = idaapi.tinfo_t()
-            local_tinfo.deserialize(idaapi.cvar.idati, p_type, fields)
+            local_tinfo.deserialize(idaapi.get_idati(), p_type, fields)
             return local_tinfo
         return None
 
     def initialize_nodes(self):
-        for ordinal in range(1, idc.get_ordinal_qty()):
+        for ordinal in range(1, idaapi.get_ordinal_count()):
             # if ordinal == 15:
             #     import pydevd
             #     pydevd.settrace("localhost", port=12345, stdoutToServer=True, stderrToServer=True)

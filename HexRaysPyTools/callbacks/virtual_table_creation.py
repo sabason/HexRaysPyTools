@@ -5,6 +5,7 @@ import idaapi
 import idautils
 import idc
 
+import HexRaysPyTools.core.helper as helper
 from . import actions
 from HexRaysPyTools.core.temporary_structure import VirtualTable
 import HexRaysPyTools.core.const as Const
@@ -15,7 +16,7 @@ from HexRaysPyTools.core.helper import GetXrefCnt
 
 class CreateVtable(actions.Action):
     description = "Create Virtual Table"
-    hotkey = None
+    hotkey = "V"
 
     def __init__(self):
         super(CreateVtable, self).__init__()
@@ -110,7 +111,7 @@ class DecompileCreateVtable(actions.HexRaysPopupAction):
             #                 sid = idc.GetStrucIdByName(obj_name)
             #                 if sid == idaapi.BADADDR:
             #                     break
-            #                 sptr = idaapi.get_struc(sid)
+            #                 sptr = helper.get_struc(sid)
             #                 mptr = idaapi.get_best_fit_member(sptr,off)
             #                 tif = idaapi.tinfo_t()
             #                 idaapi.parse_decl2(my_ti,name + " *;",tif,0)
@@ -120,6 +121,29 @@ class DecompileCreateVtable(actions.HexRaysPopupAction):
             vdui.refresh_view(True)
 
 def create_vtable(addr):
+    def get_function_signature(func_addr):
+        tinfo = idaapi.tinfo_t()
+        if idaapi.get_tinfo(tinfo, func_addr):
+            func_type_data = idaapi.func_type_data_t()
+            if tinfo.get_func_details(func_type_data):
+                args = []
+                for i, arg in enumerate(func_type_data):
+                    if i == 0:  # 第一个参数总是 this 指针
+                        continue  # 跳过，因为我们会在函数签名中单独添加
+                    arg_name = arg.name if arg.name else f"a{i}"
+                    args.append(f"{arg.type.dstr()} {arg_name}")
+                
+                args_str = ", ".join(args)
+                ret_type = tinfo.get_rettype().dstr()
+                
+                # 获取原始函数名
+                orig_name = ida_name.get_name(func_addr)
+                demangled = ida_name.demangle_name(orig_name, 0) if orig_name else None
+                func_name = demangled if demangled else orig_name
+                
+                # 构建完整的函数签名，将函数名放在指针声明中
+                return f"{ret_type} (__thiscall *{func_name})(void *this{', ' + args_str if args_str else ''})"
+        return None
 
     def isMangled(n):
         if n.startswith("_ZN")or n.startswith("?"): return True
@@ -130,17 +154,24 @@ def create_vtable(addr):
     name = ida_kernwin.ask_str("", 0, "Please enter the class name")
     if name is None:
         return
-    struct_id = idaapi.get_struc_id(name + "_vtbl")
+    struct_id = idc.get_struc_id(name + "_vtbl")
     # print struct_id
     if struct_id != idaapi.BADADDR:
         i = ida_kernwin.ask_yn(0, "A vtable structure for %s already exists. Are you sure you want to remake it?" % name)
         if i == idaapi.BADADDR:
             return
         if i == 1:
-            idaapi.del_struc_members(idaapi.get_struc(struct_id),0,idaapi.get_struc_size(struct_id))
-            # struct_id = idc.AddStrucEx(idaapi.BADADDR, name + "_vtbl", 0)
+            sptr = helper.get_struc(struct_id)
+            if sptr:
+                size = idc.get_struc_size(struct_id)
+                offset = 0
+                while offset < size:
+                    member = idc.get_member_id(struct_id, offset)
+                    if member != -1:
+                        idc.del_struc_member(struct_id, offset)
+                    offset += ida_bytes.get_item_size(member) if member != -1 else ida_bytes.get_item_size(offset)
     else:
-        struct_id = idaapi.add_struc(idaapi.BADADDR, name + "_vtbl", 0)
+        struct_id = idc.add_struc(idaapi.BADADDR, name + "_vtbl", 0)
     if struct_id == idaapi.BADADDR:
         Warning("Could not create the vtable structure!.\nPlease check the entered class name.")
         return
@@ -150,7 +181,7 @@ def create_vtable(addr):
     n = Netnode("$ VTables")
     # n[name + "_vtbl"] = []
     n[struct_id] = []
-    info = idaapi.get_inf_structure()
+    info = idaapi.get_idati()
     if not Const.EA64:
         ptr_size = 4
         fSize = idaapi.FF_DWORD
@@ -175,44 +206,65 @@ def create_vtable(addr):
         methName = ""
         print("c = 0x%08X" % c)
         print("i = %d" % i)
+        
+        # 获取函数签名
+        func_sig = get_function_signature(c) if c != 0 else None
+        
         if c != 0:
             if ida_bytes.has_name(ida_bytes.get_full_flags(get_addr_val(c))) or ida_name.get_name(c) != "":
                 methName = ida_name.get_name(c)
                 if isMangled(methName):
-                    methName = ida_name.demangle_name(methName, 0)[:ida_name.demangle_name(methName, 0).find("(")]
-                    if ' ' in methName:
-                        methName = methName[methName.rfind(" "):].strip()
-                    if methName.count("::")> 1 or methName.count("<") or methName.count(">"):
-                        methName = name + methName[methName.rfind("::"):]
-                    methName = methName.replace("~", "dtor_").replace("==", "_equal")
+                    try:
+                        demangled = ida_name.demangle_name(methName, 0)
+                        if demangled:
+                            methName = demangled[:demangled.find("(")]
+                            if ' ' in methName:
+                                methName = methName[methName.rfind(" "):].strip()
+                            # 检查函数名是否包含特殊字符或过长
+                            if ('>' in methName or '<' in methName or 
+                                len(methName) > 50 or 
+                                methName.count("?") > 2):
+                                methName = "sub_%X" % c
+                            else:
+                                methName = methName.replace("~", "dtor_").replace("==", "_equal")
+                            # 单独处理 "::" 的情况
+                            if "::" in methName:
+                                methName = methName.replace("::", "__")
+                        else:
+                            methName = "sub_%X" % c
+                    except:
+                        methName = "sub_%X" % c
+                else:
+                    # 如果不是 mangled 名称但包含 "::"，替换为 "__"
+                    if "::" in methName:
+                        methName = methName.replace("::", "__")
+                    else:
+                        methName = "sub_%X" % c
             else:
-                methName = name + "__" + "virt_%X" % c
+                methName = "sub_%X" % c
         else:
             methName = "field_%02X" % (i * 4)
         print("Name = %s"%methName)
-        sptr = idaapi.get_struc(struct_id)
-        e = idaapi.add_struc_member(sptr, methName, i * ptr_size, idaapi.FF_0OFF | fSize | idaapi.FF_DATA, opinf, ptr_size)
+        sptr = helper.get_struc(struct_id)
+        
+        # 如果有函数签名，使用它作为成员注释
+        if func_sig:
+            comment = func_sig
+        else:
+            comment = "-> %08X, args: 0x%X" % (c, idc.get_func_attr(c,idc.FUNCATTR_ARGSIZE))
+            
+        e = idc.add_struc_member(struct_id, methName, i * ptr_size, idaapi.FF_0OFF | fSize | idaapi.FF_DATA, -1, ptr_size)
         print ("e = %d" % e)
-        if e != 0:
-            if e == -1:
-                l = 0
-                while e == -1:
-                    e = idaapi.add_struc_member(sptr, (methName + "_%d"%l), i * ptr_size, idaapi.FF_0OFF | fSize | idaapi.FF_DATA,
-                                                opinf, ptr_size)
-                    l = l + 1
-                    if l > 50:
-                        ida_kernwin.warning("Wrong function name!")
-                        return
-            elif e != -2 and e != idaapi.BADADDR:
-                ida_kernwin.warning("Error adding a vtable entry!")
-                return
-            else:
-                ida_kernwin.warning("Unknown error! Err = %d"%e)
-                return
-        idc.set_member_cmt(struct_id, i * ptr_size, "-> %08X, args: 0x%X" % (c, idc.get_func_attr(c,idc.FUNCATTR_ARGSIZE)), 1)
-        # l = n[name + "_vtbl"]
-        # l.append((c - idaapi.get_imagebase()) if c else idaapi.BADADDR)
-        # n[name + "_vtbl"] = l
+        
+        if e == 0:
+            # 设置成员注释
+            idc.set_member_cmt(struct_id, i * ptr_size, comment, 1)
+        elif e != -2 and e != idaapi.BADADDR:
+            ida_kernwin.warning("Error adding a vtable entry!")
+            return
+        else:
+            ida_kernwin.warning("Unknown error! Err = %d"%e)
+            return
         l = n[struct_id]
         l.append((c - idaapi.get_imagebase()) if c else idaapi.BADADDR)
         n[struct_id] = l

@@ -1,3 +1,4 @@
+﻿
 import re
 from HexRaysPyTools.log import Log
 
@@ -9,10 +10,6 @@ import HexRaysPyTools.api as api
 import HexRaysPyTools.core.helper as helper
 import HexRaysPyTools.settings as settings
 from ..settings import get_config
-
-fDebug = False
-if fDebug:
-    import pydevd_pycharm
 
 logger = Log.get_logger()
 
@@ -104,7 +101,7 @@ class RenameInside(actions.HexRaysPopupAction):
         # type: (idaapi.cfunc_t, idaapi.ctree_item_t) -> (idaapi.tinfo_t, long, int, str)
 
         if ctree_item.citype != idaapi.VDI_EXPR:
-            return
+            return False
 
         expression = ctree_item.it.to_specific_type
         if expression.op != idaapi.cot_var:
@@ -163,6 +160,63 @@ class RenameOutside(actions.HexRaysPopupAction):
         if arg_name and _should_be_renamed(lvar.name, arg_name):
             return lvar, arg_name.lstrip("_")
 
+class RenameMemberFromFunctionName(actions.HexRaysPopupAction):
+    description = "Take name from function"
+    hotkey = "Ctrl+Alt+N"
+
+    def __init__(self):
+        super(RenameMemberFromFunctionName, self).__init__()
+
+    def check(self, hx_view):
+        return self.__extract_rename_info(hx_view.cfunc, hx_view.item) is not None
+
+    def activate(self, ctx):
+        hx_view = idaapi.get_widget_vdui(ctx.widget)
+        info = self.__extract_rename_info(hx_view.cfunc, hx_view.item)
+
+        if info:
+            mname = info.name;
+            sname = re.sub('struct ', '', info.struct_name);
+
+            if not re.search("_vtbl$", sname):
+                mname = re.sub('^(get|set)*', 'm', mname, flags=re.IGNORECASE)
+
+            if not helper.change_member_name(sname, info.offset, mname):
+                mname = mname + '_' + hex(info.offset)[2:]
+                helper.change_member_name(sname, info.offset, mname)
+
+            hx_view.refresh_view(True)
+
+    @staticmethod
+    def __extract_rename_info(cfunc, ctree_item):
+        # type: (idaapi.cfunc_t, idaapi.ctree_item_t) -> api.StructRefObject
+
+        if ctree_item.citype != idaapi.VDI_EXPR:
+            return
+
+        expr = ctree_item.it.to_specific_type
+        if expr.op == idaapi.cot_memptr:
+            t = expr.x.type.get_pointed_object()
+        elif expr.op == idaapi.cot_memref:
+            t = expr.x.type
+        else:
+            return
+
+        # Get name string
+        result = api.StructRefObject(t.dstr(), expr.m)
+        result.name = idaapi.get_name(cfunc.entry_ea)
+        if idaapi.is_valid_typename(result.name):
+            return result
+
+        result.name = idc.demangle_name(result.name, idc.get_inf_attr(3)) # Get only main name
+        if result.name is None:
+            return
+
+        result.name = re.sub('^.*:', '', result.name)
+        if result.name is None:
+            return
+
+        return result
 
 class _RenameUsingAssertVisitor(idaapi.ctree_parentee_t):
 
@@ -357,25 +411,23 @@ class TakeTypeAsName(actions.HexRaysPopupAction):
         super().__init__()
 
     def check(self,hx_view):
-        if fDebug:
-            pydevd_pycharm.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
         cfunc = hx_view.cfunc
         ctree_item = hx_view.item
         if ctree_item.citype == idaapi.VDI_EXPR:
             if ctree_item.it.op in (idaapi.cot_memptr, idaapi.cot_memref):
                 tp_name = idaapi.remove_pointer(ctree_item.e.type).dstr()
                 struct_name = idaapi.remove_pointer(ctree_item.e.x.type).dstr()
-                if idaapi.get_type_ordinal(idaapi.cvar.idati, struct_name) and idaapi.get_type_ordinal(idaapi.cvar.idati, tp_name):
-                    sid = idaapi.get_struc_id(struct_name)
+                if idaapi.get_type_ordinal(idaapi.get_idati(), struct_name) and idaapi.get_type_ordinal(idaapi.get_idati(), tp_name):
+                    sid = idc.get_struc_id(struct_name)
                     if sid != idaapi.BADADDR:
-                        sptr = idaapi.get_struc(sid)
-                        mptr = idaapi.get_member(sptr, ctree_item.e.m)
-                        if tp_name not in idaapi.get_member_name(mptr.id):
+                        field_name = idc.get_member_name(sid, ctree_item.e.m)
+                        if tp_name not in field_name:
                             return True
+
             elif ctree_item.it.op == idaapi.cot_var:
                 lv = cfunc.get_lvars()[ctree_item.e.v.idx]
                 lv_type_name = idaapi.remove_pointer(lv.tif).dstr()
-                if idaapi.get_type_ordinal(idaapi.cvar.idati,lv_type_name) and lv_type_name not in lv.name:
+                if idaapi.get_type_ordinal(idaapi.get_idati(),lv_type_name) and lv_type_name not in lv.name:
                     return True
 
     def activate(self, ctx):
@@ -386,9 +438,9 @@ class TakeTypeAsName(actions.HexRaysPopupAction):
             tp_name = "p" if item.type.is_ptr() else "o_"
             tp_name = tp_name + idaapi.remove_pointer(item.type).dstr()
             struct_name = idaapi.remove_pointer(item.x.type).dstr()
-            sid = idaapi.get_struc_id(struct_name)
-            sptr = idaapi.get_struc(sid)
-            idaapi.set_member_name(sptr,offset,tp_name)
+            sid = idc.get_struc_id(struct_name)
+            idc.set_member_name(sid,offset,tp_name)
+
             hx_view.refresh_view(True)
         elif item.op == idaapi.cot_var:
             lv = hx_view.cfunc.get_lvars()[item.v.idx]
@@ -409,3 +461,4 @@ if get_config().get_opt("Renames", "PropagateName"):
     actions.action_manager.register(PropagateName())
 if get_config().get_opt("Renames", "TakeTypeAsName"):
     actions.action_manager.register(TakeTypeAsName())
+    actions.action_manager.register(RenameMemberFromFunctionName())

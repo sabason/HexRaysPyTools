@@ -66,17 +66,17 @@ class RecastItemLeft(actions.HexRaysPopupAction):
                 # g_var = (TYPE ) ...;
                 return RecastGlobalVariable(right_tinfo, expression.x.obj_ea)
 
-            # elif expression.x.op == idaapi.cot_memptr:
-            #     # struct->member = (TYPE ) ...;
-            #     struct_name = expression.x.x.type.get_pointed_object().dstr()
-            #     struct_offset = expression.x.m
-            #     return RecastStructure(right_tinfo, struct_name, struct_offset)
-            #
-            # elif expression.x.op == idaapi.cot_memref:
-            #     # struct.member = (TYPE ) ...;
-            #     struct_name = expression.x.x.type.dstr()
-            #     struct_offset = expression.x.m
-            #     return RecastStructure(right_tinfo, struct_name, struct_offset)
+            elif expression.x.op == idaapi.cot_memptr:
+                # struct->member = (TYPE ) ...;
+                struct_name = expression.x.x.type.get_pointed_object().dstr()
+                struct_offset = expression.x.m
+                return RecastStructure(right_tinfo, struct_name, struct_offset)
+
+            elif expression.x.op == idaapi.cot_memref:
+                # struct.member = (TYPE ) ...;
+                struct_name = expression.x.x.type.dstr()
+                struct_offset = expression.x.m
+                return RecastStructure(right_tinfo, struct_name, struct_offset)
 
         elif expression.op == idaapi.cit_return:
             child = child or expression.creturn.expr
@@ -93,7 +93,7 @@ class RecastItemLeft(actions.HexRaysPopupAction):
                 return RecastReturn(child.type, cfunc.entry_ea)
 
         elif expression.op == idaapi.cot_call:
-            if expression.x == child or expression.x.op == idaapi.cot_helper:
+            if expression.x == child:
                 return
             func_ea = expression.x.obj_ea
             arg_index, param_tinfo = helper.get_func_argument_info(expression, child)
@@ -167,7 +167,7 @@ class RecastItemLeft(actions.HexRaysPopupAction):
 
         elif isinstance(ri, RecastGlobalVariable):
             idaapi.apply_tinfo(ri.global_variable_ea, ri.recast_tinfo, idaapi.TINFO_DEFINITE)
-        #TODO: remove arguments name in tinfo
+
         elif isinstance(ri, RecastArgument):
             if ri.recast_tinfo.is_array():
                 ri.recast_tinfo.convert_array_to_ptr()
@@ -186,8 +186,8 @@ class RecastItemLeft(actions.HexRaysPopupAction):
 
         elif isinstance(ri, RecastStructure):
             tinfo = idaapi.tinfo_t()
-            tinfo.get_named_type(idaapi.cvar.idati, ri.structure_name)
-            ordinal = idaapi.get_type_ordinal(idaapi.cvar.idati, ri.structure_name)
+            tinfo.get_named_type(idaapi.get_idati(), ri.structure_name)
+            ordinal = idaapi.get_type_ordinal(idaapi.get_idati(), ri.structure_name)
             if ordinal == 0:
                 return 0
 
@@ -203,7 +203,7 @@ class RecastItemLeft(actions.HexRaysPopupAction):
                 tinfo.get_udt_details(udt_data)
                 udt_data[idx].type = ri.recast_tinfo
                 tinfo.create_udt(udt_data, idaapi.BTF_STRUCT)
-                tinfo.set_numbered_type(idaapi.cvar.idati, ordinal, idaapi.NTF_REPLACE, ri.structure_name)
+                tinfo.set_numbered_type(idaapi.get_idati(), ordinal, idaapi.NTF_REPLACE, ri.structure_name)
         else:
             raise NotImplementedError
 
@@ -264,12 +264,12 @@ class RecastItemRight(RecastItemLeft):
             func_ea = expression.x.x.obj_ea
             return RecastReturn(tinfo, func_ea)
 
-        # elif expression.x.op == idaapi.cot_memptr:
-        #     # (TYPE) var->member;
-        #     idaapi.update_action_label(RecastItemRight.name, "Recast Field")
-        #     struct_name = expression.x.x.type.get_pointed_object().dstr()
-        #     struct_offset = expression.x.m
-        #     return RecastStructure(tinfo, struct_name, struct_offset)
+        elif expression.x.op == idaapi.cot_memptr:
+            # (TYPE) var->member;
+            idaapi.update_action_label(RecastItemRight.name, "Recast Field")
+            struct_name = expression.x.x.type.get_pointed_object().dstr()
+            struct_offset = expression.x.m
+            return RecastStructure(tinfo, struct_name, struct_offset)
 
     @staticmethod
     def _check_potential_array(cfunc, expr):
@@ -313,9 +313,9 @@ def get_branch(cfunc,item):
     return rc
 
 def is_gap(structure_name,field_offset):
-    sid = idaapi.get_struc_id(structure_name)
+    sid = idc.get_struc_id(structure_name)
     if sid != idaapi.BADADDR:
-        sptr = idaapi.get_struc(sid)
+        sptr = helper.get_struc(sid)
         mptr = idaapi.get_member(sptr, field_offset)
         if mptr:
             return False
@@ -323,9 +323,9 @@ def is_gap(structure_name,field_offset):
             return True
 
 def get_struct_member_type(structure_name, field_offset):
-    sid = idaapi.get_struc_id(structure_name)
+    sid = idc.get_struc_id(structure_name)
     if sid != idaapi.BADADDR:
-        sptr = idaapi.get_struc(sid)
+        sptr = helper.get_struc(sid)
         mptr = idaapi.get_member(sptr, field_offset)
         if mptr:
             tif = idaapi.tinfo_t()
@@ -471,6 +471,9 @@ class RecastStructMember(actions.HexRaysPopupAction):
 
     @staticmethod
     def process_branch(nodes, idx = 0):
+        # import pydevd_pycharm
+        # pydevd_pycharm.settrace('localhost', port=31337, stdoutToServer=True, stderrToServer=True)
+
         target = nodes[-1]
         # types = collections.OrderedDict()
         opcodes = []
@@ -514,7 +517,8 @@ class RecastStructMember(actions.HexRaysPopupAction):
         if new_type:
             struct_name = target.cexpr.x.type.get_pointed_object().dstr() if target.op == idaapi.cot_memptr else target.cexpr.x.type.dstr()
             new_type = RecastStructMember.resolve_references(new_type,ref_cnt,ptr_cnt)
-            if new_type.is_ptr() and idaapi.cot_idx not in opcodes and (is_gap(struct_name,target.cexpr.m + off_delta) or get_struct_member_type(struct_name,target.cexpr.m + off_delta).is_array()):
+            struct_member_type = get_struct_member_type(struct_name, target.cexpr.m + off_delta)
+            if new_type.is_ptr() and idaapi.cot_idx not in opcodes and (is_gap(struct_name,target.cexpr.m + off_delta) or (struct_member_type!=None and struct_member_type.is_array())):
                 new_type = new_type.get_pointed_object()
             return RECAST_STRUCTURE, struct_name, target.cexpr.m + off_delta, new_type
 
@@ -524,11 +528,11 @@ class RecastStructMember(actions.HexRaysPopupAction):
         if result:
             if result[0] == RECAST_HELPER:
                 struct_name, member_offset, cast_helper = result[1:]
-                sid = idaapi.get_struc_id(struct_name)
+                sid = idc.get_struc_id(struct_name)
                 if sid != idaapi.BADADDR:
-                    sptr = idaapi.get_struc(sid)
+                    sptr = helper.get_struc(sid)
                     mptr = idaapi.get_member(sptr,member_offset)
-                    member_name = idaapi.get_member_name(mptr.id)
+                    member_name = idc.get_member_name(mptr.id,member_offset)
                     member_size = idaapi.get_member_size(mptr)
                     if cast_helper.startswith("BYTE") or cast_helper in ("HIBYTE", "LOBYTE"):
                         idaapi.del_struc_member(sptr, member_offset)
@@ -542,9 +546,9 @@ class RecastStructMember(actions.HexRaysPopupAction):
 
             elif result[0] == RECAST_STRUCTURE:
                 structure_name, field_offset, new_type = result[1:]
-                sid = idaapi.get_struc_id(structure_name)
+                sid = idc.get_struc_id(structure_name)
                 if sid != idaapi.BADADDR:
-                    sptr = idaapi.get_struc(sid)
+                    sptr = helper.get_struc(sid)
                     mptr = idaapi.get_member(sptr, field_offset)
                     if mptr is None:
                         if idaapi.add_struc_member(sptr, "field_%X" % field_offset, field_offset,
