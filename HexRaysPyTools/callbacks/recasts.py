@@ -2,6 +2,7 @@ from collections import namedtuple
 import idaapi
 import idc
 
+
 from . import actions
 import HexRaysPyTools.core.helper as helper
 from ..settings import get_config
@@ -322,16 +323,22 @@ def is_gap(structure_name,field_offset):
         else:
             return True
 
-def get_struct_member_type(structure_name, field_offset):
-    sid = idc.get_struc_id(structure_name)
-    if sid != idaapi.BADADDR:
-        sptr = helper.get_struc(sid)
-        mptr = idaapi.get_member(sptr, field_offset)
-        if mptr:
-            tif = idaapi.tinfo_t()
-            idaapi.get_member_tinfo(tif ,mptr)
-            return tif
+def get_struct_member_type(struct_name, field_offset):
+    sid = idc.get_struc_id(struct_name)
+    if sid == idaapi.BADADDR:
         return None
+    sptr = helper.get_struc(sid)
+    if not sptr:
+        return None
+    
+    member_id = idc.get_member_id(sid, field_offset)
+    if member_id == -1:
+        return None
+        
+    tinfo = idaapi.tinfo_t()
+    if ida_typeinf.get_member_tinfo(tinfo, member_id):
+        return tinfo
+    return None
 
 
 RECAST_HELPER = 1
@@ -471,8 +478,6 @@ class RecastStructMember(actions.HexRaysPopupAction):
 
     @staticmethod
     def process_branch(nodes, idx = 0):
-        # import pydevd_pycharm
-        # pydevd_pycharm.settrace('localhost', port=31337, stdoutToServer=True, stderrToServer=True)
 
         target = nodes[-1]
         # types = collections.OrderedDict()

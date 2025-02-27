@@ -7,6 +7,7 @@ import HexRaysPyTools.core.helper as helper
 CALLED_FROM_COMMENT = "CALLED_FROM =>"
 
 class MemberDoubleClick(callbacks.HexRaysEventHandler):
+
     def __init__(self):
         super(MemberDoubleClick, self).__init__()
 
@@ -45,6 +46,9 @@ class MemberDoubleClick(callbacks.HexRaysEventHandler):
     def handle(self, event, *args):
         hx_view = args[0]
         item = hx_view.item
+
+        # import pydevd_pycharm
+        # pydevd_pycharm.settrace('localhost', port=31337, stdoutToServer=True, stderrToServer=True)
 
         if item.citype == idaapi.VDI_EXPR and item.e.op in (idaapi.cot_memptr, idaapi.cot_memref):
             if item.e.x.op in (idaapi.cot_memref, idaapi.cot_memptr):
@@ -88,6 +92,8 @@ class MemberDoubleClick(callbacks.HexRaysEventHandler):
                     pass
 
     def _get_commented_address_from_vtable(self, vtable_tinfo, method_offset):
+
+
         sid = idc.get_struc_id(vtable_tinfo.get_type_name())
         if sid != idaapi.BADADDR:
             # sptr = helper.get_struc(sid)

@@ -381,26 +381,30 @@ def load_long_str_from_idb(array_name):
     return b"".join(result).decode("utf-8")
 
 def create_padding_udt_member(offset, size):
-    # type: (long, long) -> idaapi.udt_member_t
-    """ Creates internal IDA structure with name gap_XXX and appropriate size and offset """
-
+    """
+    创建填充成员
+    :param offset: 偏移量
+    :param size: 大小
+    :return: udt_member_t
+    """
+    array_data = idaapi.array_type_data_t()
+    array_data.base = 0
+    array_data.nelems = size
+    
+    # 创建一个新的 tinfo_t 对象作为元素类型
+    byte_tinfo = idaapi.tinfo_t()
+    byte_tinfo.create_simple_type(idaapi.BTF_BYTE)
+    array_data.elem_type = byte_tinfo
+    
+    tinfo = idaapi.tinfo_t()
+    tinfo.create_array(array_data)
+    
     udt_member = idaapi.udt_member_t()
-    udt_member.name = "gap_{0:X}".format(offset)
-    udt_member.offset = offset
+    udt_member.name = f"gap_{offset:X}"
+    udt_member.type = tinfo
+    udt_member.offset = offset * 8  # 转换为位
     udt_member.size = size
-
-    if size == 1:
-        udt_member.type = const.BYTE_TINFO
-    else:
-        if size < 1 or size > 0xffffffff:
-            print("HexRaysPyTools::core::helper::create_padding_udt_member: size is out of uint32 range (offset:{} size:{})".format(offset, size))
-        array_data = idaapi.array_type_data_t()
-        array_data.base = 0
-        array_data.elem_type = const.BYTE_TINFO
-        array_data.nelems = size
-        tmp_tinfo = idaapi.tinfo_t()
-        tmp_tinfo.create_array(array_data)
-        udt_member.type = tmp_tinfo
+    
     return udt_member
 
 

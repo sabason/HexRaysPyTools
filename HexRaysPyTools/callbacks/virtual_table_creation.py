@@ -128,20 +128,20 @@ def create_vtable(addr):
             if tinfo.get_func_details(func_type_data):
                 args = []
                 for i, arg in enumerate(func_type_data):
-                    if i == 0:  # µÚÒ»¸ö²ÎÊı×ÜÊÇ this Ö¸Õë
-                        continue  # Ìø¹ı£¬ÒòÎªÎÒÃÇ»áÔÚº¯ÊıÇ©ÃûÖĞµ¥¶ÀÌí¼Ó
+                    if i == 0:  # ç¬¬ä¸€ä¸ªå‚æ•°æ€»æ˜¯ this æŒ‡é’ˆ
+                        continue  # è·³è¿‡ï¼Œå› ä¸ºæˆ‘ä»¬ä¼šåœ¨å‡½æ•°ç­¾åä¸­å•ç‹¬æ·»åŠ 
                     arg_name = arg.name if arg.name else f"a{i}"
                     args.append(f"{arg.type.dstr()} {arg_name}")
                 
                 args_str = ", ".join(args)
                 ret_type = tinfo.get_rettype().dstr()
                 
-                # »ñÈ¡Ô­Ê¼º¯ÊıÃû
+                # è·å–åŸå§‹å‡½æ•°å
                 orig_name = ida_name.get_name(func_addr)
                 demangled = ida_name.demangle_name(orig_name, 0) if orig_name else None
                 func_name = demangled if demangled else orig_name
                 
-                # ¹¹½¨ÍêÕûµÄº¯ÊıÇ©Ãû£¬½«º¯ÊıÃû·ÅÔÚÖ¸ÕëÉùÃ÷ÖĞ
+                # æ„å»ºå®Œæ•´çš„å‡½æ•°ç­¾åï¼Œå°†å‡½æ•°åæ”¾åœ¨æŒ‡é’ˆå£°æ˜ä¸­
                 return f"{ret_type} (__thiscall *{func_name})(void *this{', ' + args_str if args_str else ''})"
         return None
 
@@ -207,7 +207,7 @@ def create_vtable(addr):
         print("c = 0x%08X" % c)
         print("i = %d" % i)
         
-        # »ñÈ¡º¯ÊıÇ©Ãû
+        # è·å–å‡½æ•°ç­¾å
         func_sig = get_function_signature(c) if c != 0 else None
         
         if c != 0:
@@ -220,14 +220,14 @@ def create_vtable(addr):
                             methName = demangled[:demangled.find("(")]
                             if ' ' in methName:
                                 methName = methName[methName.rfind(" "):].strip()
-                            # ¼ì²éº¯ÊıÃûÊÇ·ñ°üº¬ÌØÊâ×Ö·û»ò¹ı³¤
+                            # æ£€æŸ¥å‡½æ•°åæ˜¯å¦åŒ…å«ç‰¹æ®Šå­—ç¬¦æˆ–è¿‡é•¿
                             if ('>' in methName or '<' in methName or 
                                 len(methName) > 50 or 
                                 methName.count("?") > 2):
                                 methName = "sub_%X" % c
                             else:
                                 methName = methName.replace("~", "dtor_").replace("==", "_equal")
-                            # µ¥¶À´¦Àí "::" µÄÇé¿ö
+                            # å•ç‹¬å¤„ç† "::" çš„æƒ…å†µ
                             if "::" in methName:
                                 methName = methName.replace("::", "__")
                         else:
@@ -235,7 +235,7 @@ def create_vtable(addr):
                     except:
                         methName = "sub_%X" % c
                 else:
-                    # Èç¹û²»ÊÇ mangled Ãû³Æµ«°üº¬ "::"£¬Ìæ»»Îª "__"
+                    # å¦‚æœä¸æ˜¯ mangled åç§°ä½†åŒ…å« "::"ï¼Œæ›¿æ¢ä¸º "__"
                     if "::" in methName:
                         methName = methName.replace("::", "__")
                     else:
@@ -247,7 +247,7 @@ def create_vtable(addr):
         print("Name = %s"%methName)
         sptr = helper.get_struc(struct_id)
         
-        # Èç¹ûÓĞº¯ÊıÇ©Ãû£¬Ê¹ÓÃËü×÷Îª³ÉÔ±×¢ÊÍ
+        # å¦‚æœæœ‰å‡½æ•°ç­¾åï¼Œä½¿ç”¨å®ƒä½œä¸ºæˆå‘˜æ³¨é‡Š
         if func_sig:
             comment = func_sig
         else:
@@ -257,7 +257,7 @@ def create_vtable(addr):
         print ("e = %d" % e)
         
         if e == 0:
-            # ÉèÖÃ³ÉÔ±×¢ÊÍ
+            # è®¾ç½®æˆå‘˜æ³¨é‡Š
             idc.set_member_cmt(struct_id, i * ptr_size, comment, 1)
         elif e != -2 and e != idaapi.BADADDR:
             ida_kernwin.warning("Error adding a vtable entry!")

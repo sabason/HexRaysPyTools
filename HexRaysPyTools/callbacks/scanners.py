@@ -15,12 +15,17 @@ class Scanner(actions.HexRaysPopupAction):
     """
     def __init__(self):
         super(Scanner, self).__init__()
+        # print("[DEBUG] Scanner initialized")
 
     def _can_be_scanned(self, cfunc, ctree_item):
+        # print("[DEBUG] _can_be_scanned called")
         obj = api.ScanObject.create(cfunc, ctree_item)
-        return obj and helper.is_legal_type(obj.tinfo)
+        result = obj and helper.is_legal_type(obj.tinfo)
+        # print(f"[DEBUG] Can be scanned: {result}, obj: {obj}")
+        return result
 
     def check(self, hx_view):
+        # print("[DEBUG] Scanner.check called")
         cfunc, ctree_item = hx_view.cfunc, hx_view.item
         return self._can_be_scanned(cfunc, ctree_item)
 
@@ -31,8 +36,12 @@ class ShallowScanVariable(Scanner):
 
     def __init__(self):
         super(ShallowScanVariable, self).__init__()
+        # print("[DEBUG] ShallowScanVariable initialized")
 
     def activate(self, ctx):
+        # import pydevd_pycharm
+        # pydevd_pycharm.settrace('localhost', port=31337, stdoutToServer=True, stderrToServer=True)
+
         hx_view = idaapi.get_widget_vdui(ctx.widget)
         cfunc = hx_view.cfunc
         origin = cache.temporary_structure.main_offset

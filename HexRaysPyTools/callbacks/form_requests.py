@@ -6,6 +6,12 @@ import HexRaysPyTools.core.classes as classes
 from HexRaysPyTools.core.structure_graph import StructureGraph
 from HexRaysPyTools.forms import StructureGraphViewer, ClassViewer, StructureBuilder
 from ..settings import get_config
+from HexRaysPyTools.log import Log, LogLevel
+logger = Log.get_logger()
+from HexRaysPyTools.core.struct_xrefs import XrefStorage
+from HexRaysPyTools.core.temporary_structure import TemporaryStructureModel
+from HexRaysPyTools.core.rename_hooks import rename_hook
+from HexRaysPyTools.callbacks.export_pseudocode import ExportPseudocodeAction
 
 
 class ShowGraph(actions.Action):
@@ -89,4 +95,8 @@ if get_config().get_opt("Main plugins UI forms", "ShowGraph"):
     actions.action_manager.register(ShowGraph())
 if get_config().get_opt("Main plugins UI forms", "ShowGraph"):
     actions.action_manager.register(ShowGraph())
-actions.action_manager.register(ShowStructureBuilder())	
+actions.action_manager.register(ShowStructureBuilder())
+
+# 注册导出伪代码动作
+export_pseudocode = ExportPseudocodeAction()
+actions.action_manager.register(export_pseudocode)	

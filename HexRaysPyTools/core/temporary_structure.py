@@ -178,7 +178,25 @@ class AbstractMember:
         self.tinfo = None
 
     def type_equals_to(self, tinfo):
-        return self.tinfo.equals_to(tinfo)
+        # 增加空值检查
+        if not self.tinfo or not tinfo:
+            return False
+        
+        try:
+            # 检查类型是否相同
+            if self.tinfo.get_size() != tinfo.get_size():
+                return False
+            
+            # 如果是基本类型,直接比较类型字符串
+            if self.tinfo.is_scalar() and tinfo.is_scalar():
+                return self.tinfo.dstr() == tinfo.dstr()
+            
+            # 如果是复杂类型(结构体、联合等),使用equals_to
+            return self.tinfo.equals_to(tinfo)
+        
+        except Exception as e:
+            print(f"[Warning] Type comparison failed: {str(e)}")
+            return False
 
     def switch_array_flag(self):
         self.is_array ^= True
@@ -705,7 +723,7 @@ class TemporaryStructureModel(QtCore.QAbstractTableModel):
         # similar to the function below set_decl but allows us to apply more than one struct in a single call
         ret_val = idc.parse_decls(cdecls)
         if ret_val == 0:
-            tid = idc.import_type(idaapi.get_idati(), base_struct_name)
+            tid = idaapi.import_type(idaapi.get_idati(), base_struct_name)
             if tid:
                 print(f"[Info] New type \"{base_struct_name}\" was added to Local Types")
                 tinfo = idaapi.create_typedef(base_struct_name)
@@ -718,40 +736,6 @@ class TemporaryStructureModel(QtCore.QAbstractTableModel):
                 print(f"[ERROR] could not import type \"{base_struct_name}\" into idb")
         else:
             print(f"[ERROR] Could not parse structure declarations, found {ret_val} errors")
-
-    # def set_decl(self, cdecl, origin=0):
-    #     import pydevd_pycharm
-    #     pydevd_pycharm.settrace('127.0.0.1', port=31337, stdoutToServer=True, stderrToServer=True, suspend=False)
-    #     # 使用新的 idaapi 解析声明的方式
-    #     try:
-    #         # 获取结构体名称和类型信息
-    #         parsed_decl = idaapi.idc_parse_decl(idaapi.get_idati(),cdecl, idaapi.PT_TYP)
-    #         if not parsed_decl:
-    #             print(f"[ERROR] Failed to parse the declaration: {cdecl}")
-    #             return None
-    #         structure_name = parsed_decl[0]
-    #
-    #         # 创建类型库，如果没有存在该类型
-    #         if type_library.create_type(structure_name, cdecl):
-    #             print(f"[Info] Structure \"{structure_name}\" was added to Local Types")
-    #
-    #             # 创建指针类型并应用于扫描到的变量
-    #             tinfo = idaapi.tinfo_t()
-    #             tinfo.create_typedef(parsed_decl[1])
-    #             ptr_tinfo = idaapi.tinfo_t()
-    #             ptr_tinfo.create_ptr(tinfo)
-    #
-    #             # 遍历唯一扫描到的变量并应用指针类型
-    #             for scanned_var in self.get_unique_scanned_variables(origin):
-    #                 scanned_var.apply_type(ptr_tinfo)
-    #
-    #             return tinfo
-    #         else:
-    #             print(f"[ERROR] Structure {structure_name} probably already exists")
-    #             return None
-    #     except Exception as e:
-    #         print(f"[ERROR] Exception occurred: {e}")
-    #         return None
 
     def set_decl(self, cdecl, origin=0):
         structure_name = idaapi.idc_parse_decl(idaapi.get_idati(), cdecl, idaapi.PT_TYP)[0]
@@ -766,37 +750,6 @@ class TemporaryStructureModel(QtCore.QAbstractTableModel):
             return tinfo
         else:
             print("[ERROR] Structure {} probably already exist".format(structure_name))
-
-        # previous_ordinal = idaapi.get_type_ordinal(idaapi.get_idati(), structure_name)
-
-        # MARK: Remove if above works
-        # if previous_ordinal:
-        #     reply = QtWidgets.QMessageBox.question(
-        #         None,
-        #         "HexRaysPyTools",
-        #         "Structure already exist. Do you want to overwrite it?",
-        #         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-        #     )
-        #     if reply == QtWidgets.QMessageBox.Yes:
-        #         idaapi.del_numbered_type(idaapi.get_idati(), previous_ordinal)
-        #         ordinal = idaapi.idc_set_local_type(previous_ordinal, cdecl, idaapi.PT_TYP)
-        #     else:
-        #         return
-        # else:
-        #     ordinal = idaapi.idc_set_local_type(-1, cdecl, idaapi.PT_TYP)
-        # # TODO: save comments
-        # if ordinal:
-        #     tid = type_library.import_type(idaapi.get_idati(), structure_name)
-        #     if tid:
-        #         print(f"[Info] New type \"{structure_name}\" was added to Local Types")
-        #         tinfo = idaapi.create_typedef(structure_name)
-        #         ptr_tinfo = idaapi.tinfo_t()
-        #         ptr_tinfo.create_ptr(tinfo)
-        #         for scanned_var in self.get_unique_scanned_variables(origin):
-        #             scanned_var.apply_type(ptr_tinfo)
-        #         return tinfo
-        # else:
-        #     print("[ERROR] Structure {} probably already exist".format(structure_name))
 
     def pack(self, start=0, stop=None):
         if self.collisions[start:stop].count(True):
